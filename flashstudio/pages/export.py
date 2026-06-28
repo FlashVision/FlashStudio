@@ -39,17 +39,24 @@ def render_export_page():
                 st.text_input("Path", placeholder="model.pth", key="export_weights_path")
 
             sd = st.session_state.get("save_dir", os.path.join(os.getcwd(), "workspace"))
-            wmap = {"Best (inference)": "checkpoint_best.pth", "Best (FP16)": "model_best_fp16.pth", "Last": "checkpoint_last.pth"}
+            wmap = {
+                "Best (inference)": ["model_best_inference.pth", "checkpoint_best.pth"],
+                "Best (FP16)": ["model_best_fp16.pth"],
+                "Last": ["model_last_inference.pth", "checkpoint_last.pth"],
+            }
             if src != "Custom":
-                target = wmap.get(src, "")
+                targets = wmap.get(src, ["checkpoint_best.pth"])
                 wp = ""
                 if os.path.isdir(sd):
                     for root, _dirs, files in os.walk(sd):
-                        if target in files:
-                            wp = os.path.join(root, target)
+                        for target in targets:
+                            if target in files:
+                                wp = os.path.join(root, target)
+                                break
+                        if wp:
                             break
                 if not wp:
-                    wp = os.path.join(sd, target)
+                    wp = os.path.join(sd, targets[0])
             else:
                 wp = st.session_state.get("export_weights_path", "")
 
@@ -98,19 +105,29 @@ def _run_export(weights_path, img_size, opset=13, dynamic=True):
         return
 
     import torch
-    from flashdet import get_config, build_model
+    try:
+        from flashdet import get_config, build_model
+    except ImportError:
+        flash("FlashDet not installed — run `pip install flashdet`", "error")
+        st.rerun()
+        return
 
     out = weights_path.replace(".pth", ".onnx")
     with st.spinner("Exporting..."):
         try:
             ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
             cfg = ckpt.get("config", {})
-            config = get_config(model_size=cfg.get("model_size", "n"), input_size=cfg.get("input_size", img_size), num_classes=cfg.get("num_classes", 80))
-            model = build_model(config, architecture=cfg.get("architecture", "flashdet"))
+            nc = cfg.get("num_classes", st.session_state.get("num_classes", 80))
+            raw_input = cfg.get("input_size", img_size)
+            inp_scalar = raw_input[0] if isinstance(raw_input, (tuple, list)) else raw_input
+            arch = cfg.get("architecture", "flashdet")
+            config = get_config(model_size=cfg.get("model_size", "n"), input_size=inp_scalar, num_classes=nc)
+            config.model.architecture = arch
+            model = build_model(config, architecture=arch)
             sd = ckpt.get("model_state_dict", ckpt.get("model", ckpt))
             model.load_state_dict(sd, strict=False)
             model.eval()
-            dummy = torch.randn(1, 3, config.input_size, config.input_size)
+            dummy = torch.randn(1, 3, inp_scalar, inp_scalar)
             dyn = {"images": {0: "batch"}, "output": {0: "batch"}} if dynamic else None
             torch.onnx.export(model, dummy, out, opset_version=opset, input_names=["images"], output_names=["output"], dynamic_axes=dyn)
             sz = f"{os.path.getsize(out) / (1024*1024):.1f}MB" if os.path.isfile(out) else "—"

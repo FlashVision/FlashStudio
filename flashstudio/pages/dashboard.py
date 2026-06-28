@@ -78,7 +78,7 @@ def render_dashboard():
             )
     with m4:
         with st.container(border=True):
-            best_map = f"{stats['best_map']:.3f}" if stats and stats["best_map"] else "—"
+            best_map = f"{stats['best_map']:.3f}" if stats and stats["best_map"] is not None else "—"
             runs_count = stats["runs"] if stats else 0
             st.markdown(
                 f'<div style="text-align:center;padding:0.4rem 0;">'

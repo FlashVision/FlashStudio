@@ -40,9 +40,9 @@ def get_gpu_info() -> dict:
         if torch.cuda.is_available():
             info["available"] = True
             info["name"] = torch.cuda.get_device_name(0)
-            info["memory_total"] = torch.cuda.get_device_properties(0).total_mem / 1e9
+            info["memory_total"] = torch.cuda.get_device_properties(0).total_memory / 1e9
             info["memory_used"] = torch.cuda.memory_allocated(0) / 1e9
-    except ImportError:
+    except Exception:
         pass
     return info
 

@@ -249,7 +249,7 @@ def _render_conversion_hint():
     train_path = st.session_state.get("train_img_path", "")
     if not train_path or not os.path.isdir(train_path):
         return
-    ann_format = st.session_state.get("ann_format", "COCO JSON (recommended)")
+    ann_format = st.session_state.get("ann_format", "COCO JSON")
     detected = st.session_state.get("detected_format", "")
     needs = "YOLO" in ann_format or "VOC" in ann_format or detected in ("txt", "voc")
     if not needs:
@@ -383,7 +383,7 @@ def _render_preview():
                     f'{start + 1}–{end_idx} of {len(all_imgs)}</p>', unsafe_allow_html=True)
     with nav_next:
         if st.button("Next", disabled=(start + n >= len(all_imgs)), key="next_btn"):
-            st.session_state["prev_start"] = min(start + n, len(all_imgs) - 1)
+            st.session_state["prev_start"] = min(start + n, max(len(all_imgs) - n, 0))
             st.rerun()
 
     # Load COCO annotations if available
@@ -671,7 +671,7 @@ def _convert_to_coco(src, split, src_fmt):
             if stats.get("status") == "already_in_target_format":
                 out = src
             st.session_state["dataset_output_path"] = out
-            st.session_state["ann_format"] = "COCO JSON (recommended)"
+            st.session_state["ann_format"] = "COCO JSON"
             t = os.path.join(out, "train")
             v = os.path.join(out, "valid")
             if not os.path.isdir(v):

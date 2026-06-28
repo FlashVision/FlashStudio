@@ -238,8 +238,17 @@ def _zone_draw_ui(sol):
     existing_closed = st.session_state.get("zone_closed", False)
 
     if _HAS_ZONE_DRAWER:
-        zone_drawer(image=frame_img, mode=draw_mode, points=existing_points,
-                    closed=existing_closed, display_width=650)
+        result = zone_drawer(image=frame_img, mode=draw_mode, points=existing_points,
+                             closed=existing_closed, display_width=650)
+        if result and result.get("points"):
+            pts = result["points"]
+            img_w = frame_img.size[0] if frame_img else 640
+            img_h = frame_img.size[1] if frame_img else 480
+            dw = result.get("displayWidth", 650)
+            dh = result.get("displayHeight", 480)
+            sx = img_w / dw if dw else 1
+            sy = img_h / dh if dh else 1
+            _store_zone_coords(pts, draw_mode, sx, sy)
     else:
         st.warning("Zone drawing component not available.")
 
@@ -514,10 +523,12 @@ def _run_flashdet_video(video_file, solution_name):
             wtmp.write(up.read()); wtmp.flush(); up.seek(0)
             weights = wtmp.name
 
+    custom_cls = _get_class_names()
     predictor = Predictor(model_path=weights, device=st.session_state.get("infer_device", "cpu").split(" ")[0],
                           conf_thresh=st.session_state.get("infer_conf", 0.25),
                           nms_thresh=st.session_state.get("infer_nms", 0.45),
-                          input_size=st.session_state.get("infer_img_size", 640))
+                          input_size=st.session_state.get("infer_img_size", 640),
+                          class_names=custom_cls if custom_cls != COCO_CLASSES else None)
     tracker = FlashTracker()
     solution = _create_solution(solution_name, predictor, tracker, fps)
 
@@ -536,8 +547,9 @@ def _run_flashdet_video(video_file, solution_name):
         if solution:
             annotated, results = solution.process_frame(frame)
         else:
-            results = predictor(frame); annotated = frame
-        if isinstance(results, list):
+            results = predictor(frame)
+            annotated = _draw_boxes_cv2(frame, results)
+        if isinstance(results, (list, tuple)):
             total_dets += len(results)
         processed += 1
         if idx % max(total // 4, 1) == 0:
@@ -545,6 +557,10 @@ def _run_flashdet_video(video_file, solution_name):
         progress.progress(idx / min(total, max_frames))
 
     cap.release(); progress.empty()
+    try:
+        os.unlink(tmp.name)
+    except OSError:
+        pass
     elapsed = time.perf_counter() - t0
     sol_output = {}
     if solution:
@@ -566,14 +582,21 @@ def _run_flashdet_video(video_file, solution_name):
 def _create_solution(solution_name, predictor, tracker, fps):
     line_pts = st.session_state.get("zone_line_points")
     polygons = st.session_state.get("zone_polygons")
-    classes = st.session_state.get("infer_class_filter") or None
+    class_filter_names = st.session_state.get("infer_class_filter") or None
+    # FlashDet solutions expect class indices (int), not name strings
+    classes = None
+    if class_filter_names:
+        all_cls = _get_class_names()
+        classes = [all_cls.index(n) for n in class_filter_names if n in all_cls]
+        if not classes:
+            classes = None
 
     if solution_name == "None (Detection Only)":
         return None
 
     sol_map = {
         "Object Counter": ("ObjectCounter", dict(line_points=line_pts, classes=classes)),
-        "Region Counter": ("RegionCounter", dict(regions=polygons, classes=classes)),
+        "Region Counter": ("RegionCounter", dict(regions={"zone_0": polygons[0]} if polygons else {}, classes=classes)),
         "Speed Estimator": ("SpeedEstimator", dict(fps=fps, classes=classes)),
         "Heatmap": ("Heatmap", dict(classes=classes)),
         "Security Alarm": ("SecurityAlarm", dict(restricted_zones=polygons, classes=classes)),
@@ -583,7 +606,7 @@ def _create_solution(solution_name, predictor, tracker, fps):
         "Crowd": ("CrowdDensity", dict(classes=classes)),
         "Parking": ("ParkingManager", dict(parking_spots=polygons, classes=classes)),
         "Traffic": ("TrafficFlow", dict(fps=fps, classes=classes)),
-        "Dwell": ("DwellTimeAnalyzer", dict(zones=polygons, fps=fps, classes=classes)),
+        "Dwell": ("DwellTimeAnalyzer", dict(zones={"zone_0": polygons[0]} if polygons else {}, fps=fps, classes=classes)),
         "Distance": ("DistanceCalculator", dict(classes=classes)),
         "Workout": ("WorkoutMonitor", dict(classes=classes)),
         "Cropper": ("ObjectCropper", dict(classes=classes)),
@@ -611,11 +634,16 @@ def _create_solution(solution_name, predictor, tracker, fps):
 def _detect(image):
     weights = st.session_state.get("infer_weights_path", "")
     if not weights:
-        up = st.session_state.get("infer_weights_file")
-        if up:
-            tmp = tempfile.NamedTemporaryFile(suffix=".pth", delete=False)
-            tmp.write(up.read()); tmp.flush(); up.seek(0)
-            weights = tmp.name
+        cached = st.session_state.get("_infer_weights_tmp_path", "")
+        if cached and os.path.isfile(cached):
+            weights = cached
+        else:
+            up = st.session_state.get("infer_weights_file")
+            if up:
+                tmp = tempfile.NamedTemporaryFile(suffix=".pth", delete=False)
+                tmp.write(up.read()); tmp.flush(); up.seek(0)
+                weights = tmp.name
+                st.session_state["_infer_weights_tmp_path"] = weights
     if weights:
         try:
             return _detect_real(image, weights)
@@ -627,15 +655,18 @@ def _detect(image):
 def _detect_real(image, weights_path):
     if not _HAS_PREDICTOR:
         raise ImportError("Predictor unavailable")
+    custom_cls = _get_class_names()
     predictor = Predictor(model_path=weights_path, device=st.session_state.get("infer_device", "cpu").split(" ")[0],
                           conf_thresh=st.session_state.get("infer_conf", 0.25),
                           nms_thresh=st.session_state.get("infer_nms", 0.45),
-                          input_size=st.session_state.get("infer_img_size", 640))
+                          input_size=st.session_state.get("infer_img_size", 640),
+                          class_names=custom_cls if custom_cls != COCO_CLASSES else None)
     raw = predictor(np.array(image))
     class_filter = st.session_state.get("infer_class_filter", [])
+    label_list = custom_cls or COCO_CLASSES
     dets = []
     for bbox, score, cls_id in raw:
-        name = COCO_CLASSES[int(cls_id)] if int(cls_id) < len(COCO_CLASSES) else f"class_{cls_id}"
+        name = label_list[int(cls_id)] if int(cls_id) < len(label_list) else f"class_{cls_id}"
         if class_filter and name not in class_filter:
             continue
         dets.append([name, f"{float(score):.2f}", str([int(x) for x in (bbox.tolist() if hasattr(bbox, 'tolist') else list(bbox))])])
@@ -660,6 +691,22 @@ def _detect_demo(image):
         y1 = int(rng.integers(0, max(h - 100, 1)))
         dets.append([name, f"{conf:.2f}", str([x1, y1, min(x1 + int(rng.integers(60, 200)), w), min(y1 + int(rng.integers(60, 200)), h)])])
     return sorted(dets, key=lambda x: float(x[1]), reverse=True)
+
+
+def _draw_boxes_cv2(frame, raw_results):
+    """Draw bounding boxes on a BGR cv2 frame from Predictor output [(bbox, score, cls_id), ...]."""
+    import cv2
+    label_list = _get_class_names() or COCO_CLASSES
+    for bbox, score, cls_id in raw_results:
+        x1, y1, x2, y2 = [int(v) for v in (bbox.tolist() if hasattr(bbox, 'tolist') else list(bbox))]
+        cid = int(cls_id)
+        name = label_list[cid] if cid < len(label_list) else f"cls_{cid}"
+        label = f"{name} {float(score):.2f}"
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (124, 58, 237), 2)
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(frame, (x1, y1 - th - 6), (x1 + tw + 4, y1), (124, 58, 237), -1)
+        cv2.putText(frame, label, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    return frame
 
 
 def _draw_boxes(image, dets):

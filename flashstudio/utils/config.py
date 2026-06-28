@@ -10,14 +10,14 @@ CONFIG_SCHEMA = {
     "project": ["run_name"],
     "dataset": [
         "dataset_name", "train_img_path", "val_img_path",
-        "ann_format", "upload_num_classes", "class_names",
+        "ann_format", "upload_num_classes", "class_names", "num_classes",
     ],
     "model": [
         "arch_family", "model_arch", "pico_backbone",
         "pretrain_option", "custom_weights",
     ],
     "training": [
-        "epochs", "batch_size", "lr", "img_size",
+        "epochs", "batch_size", "lr", "img_size", "input_size",
         "warmup_epochs", "patience", "grad_accum", "num_workers",
     ],
     "optimizer": ["optimizer", "weight_decay", "use_8bit_optimizer"],

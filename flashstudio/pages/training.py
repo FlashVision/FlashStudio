@@ -10,11 +10,9 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from flashstudio.utils.device import has_cuda, get_device
-from flashstudio.utils.filesystem import dir_size_str, list_subdirs, count_files, safe_rmtree
-from flashstudio.utils.config import (
-    build_training_config, apply_training_config, config_to_yaml_str, load_config_yaml, save_config_yaml,
-)
+from flashstudio.utils.device import has_cuda
+from flashstudio.utils.filesystem import dir_size_str
+from flashstudio.utils.config import build_training_config, apply_training_config
 
 
 def _get_default_workspace():
@@ -387,6 +385,24 @@ def _get_run_meta(run_dir: str) -> dict:
         except Exception:
             pass
 
+    # Fallback: parse log tail for "Best mAP@0.5:" and epoch count
+    if (meta["epochs"] == "?" or not meta["mAP"]) and log_files:
+        try:
+            best_log = max(log_files, key=lambda p: os.path.getsize(p))
+            with open(best_log, "r", encoding="utf-8", errors="replace") as f:
+                tail = f.readlines()[-20:]
+            for line in tail:
+                bm = re.search(r"Best mAP@0\.5:\s*([\d.]+)", line)
+                if bm and not meta["mAP"]:
+                    meta["mAP"] = float(bm.group(1))
+            if meta["epochs"] == "?":
+                for line in tail:
+                    em = re.search(r"Epoch (\d+)/(\d+)", line)
+                    if em:
+                        meta["epochs"] = em.group(1)
+        except OSError:
+            pass
+
     # Build enriched display name
     parts = [name]
     if meta["model"]:
@@ -437,9 +453,20 @@ def _parse_training_csv(run_dir: str):
     except Exception:
         return None
 
-    # Filter out None from val_loss/mAP (some epochs may not have validation)
-    history["val_loss"] = [v for v in history["val_loss"] if v is not None]
-    history["mAP50"] = [v for v in history["mAP50"] if v is not None]
+    # Build paired val_epochs list (epochs where validation actually ran)
+    val_epochs = []
+    val_loss_clean = []
+    mAP50_clean = []
+    for i, ep in enumerate(history["epochs"]):
+        vl = history["val_loss"][i] if i < len(history["val_loss"]) else None
+        mp = history["mAP50"][i] if i < len(history["mAP50"]) else None
+        if vl is not None or mp is not None:
+            val_epochs.append(ep)
+            val_loss_clean.append(vl)
+            mAP50_clean.append(mp)
+    history["val_epochs"] = val_epochs
+    history["val_loss"] = val_loss_clean
+    history["mAP50"] = mAP50_clean
 
     # Fill in metadata from results.json if available
     results_path = os.path.join(run_dir, "results.json")
@@ -466,18 +493,24 @@ def _parse_training_csv(run_dir: str):
             for line in header_lines:
                 if "Model Size:" in line:
                     history["model_info"] = line.split("Model Size:")[-1].strip()
+                model_m = re.search(r"Model: (\w+), Input: \((\d+), (\d+)\)", line)
+                if model_m and not history["model_info"]:
+                    history["model_info"] = f"{model_m.group(1)} ({model_m.group(2)}x{model_m.group(3)})"
                 if "Device:" in line:
                     history["device"] = line.split("Device:")[-1].strip()
                 if "Classes" in line and ":" in line:
                     m = re.search(r"Classes \((\d+)\): \[(.+)\]", line)
                     if m:
                         history["classes"] = [c.strip().strip("'") for c in m.group(2).split(",")]
-                if "Epochs:" in line and "Batch" not in line:
-                    m = re.search(r"Epochs: (\d+)", line)
+                if "Epochs:" in line:
+                    m = re.search(r"Epochs:\s*(\d+)", line)
                     if m and not history["total_epochs"]:
                         history["total_epochs"] = int(m.group(1))
+                    bm = re.search(r"Batch:\s*(\d+)", line)
+                    if bm and not history["batch_size"]:
+                        history["batch_size"] = int(bm.group(1))
                 if "Batch Size:" in line:
-                    m = re.search(r"Batch Size: (\d+)", line)
+                    m = re.search(r"Batch Size:\s*(\d+)", line)
                     if m and not history["batch_size"]:
                         history["batch_size"] = int(m.group(1))
         except OSError:
@@ -504,10 +537,15 @@ def _render_run_dashboard(run_dir):
             try:
                 with open(log_file) as f:
                     log_content = f.read()
-                if "Traceback" in log_content or "Error:" in log_content:
-                    last_lines = log_content.strip().split("\n")[-5:]
-                    error_summary = "\n".join(last_lines)
-                    st.error(f"Training error detected. Check the **Log** tab for details.\n```\n{error_summary}\n```")
+                if "Traceback" in log_content:
+                    all_lines = log_content.strip().split("\n")
+                    tb_idx = -1
+                    for idx_l, ln in enumerate(all_lines):
+                        if "Traceback" in ln:
+                            tb_idx = idx_l
+                    if tb_idx >= 0:
+                        error_summary = "\n".join(all_lines[tb_idx:][-10:])
+                        st.error(f"Training error detected. Check the **Log** tab for details.\n```\n{error_summary}\n```")
             except OSError:
                 pass
 
@@ -547,11 +585,13 @@ def _render_run_dashboard(run_dir):
 
 
 def _find_log_file(run_dir: str):
-    """Find the training log file in a run directory."""
+    """Find the best training log file — prefer the largest (stdout-redirected has more data)."""
     logs = glob_module.glob(os.path.join(run_dir, "train_*.log"))
-    if logs:
-        return max(logs, key=os.path.getmtime)
-    return None
+    if not logs:
+        return None
+    # Prefer the largest file — stdout log captures both print() and logger output,
+    # while FileHandler log only captures logger.info() calls (misses verify_dataset print output).
+    return max(logs, key=lambda p: os.path.getsize(p))
 
 
 def _parse_training_log(log_path: str):
@@ -667,11 +707,7 @@ def _parse_training_log(log_path: str):
         if time_m:
             history["epoch_time"].append(float(time_m.group(1)))
 
-    # Fill in epochs list
-    n = max(len(history["train_loss"]), len(history["lr"]),
-            len(history["val_loss"]), len(history["mAP50"]), 1) - 1
-    if n < 0:
-        n = 0
+    # Fill in epochs list from the longest metric array
     n = max(len(history["train_loss"]), len(history["lr"]),
             len(history["val_loss"]), len(history["mAP50"]))
     history["epochs"] = list(range(1, n + 1))
@@ -750,8 +786,8 @@ def _render_curves(history, run_dir):
                        for i, x in enumerate(history["train_loss"]) if x is not None]
 
     # Determine sub-loss keys (CSV uses train_box/train_cls, log uses o2m_cls/o2m_box)
-    has_csv_subloss = any(history.get("train_box", []))
-    has_log_subloss = any(history.get("o2m_cls", []))
+    has_csv_subloss = any(x for x in history.get("train_box", []) if x is not None)
+    has_log_subloss = any(x for x in history.get("o2m_cls", []) if x is not None)
 
     fig = make_subplots(
         rows=2, cols=2,
@@ -766,17 +802,17 @@ def _render_curves(history, run_dir):
         row=1, col=1,
     )
     if history.get("val_loss"):
-        val_epochs = list(range(1, len(history["val_loss"]) + 1))
+        ve = history.get("val_epochs", list(range(1, len(history["val_loss"]) + 1)))
         fig.add_trace(
-            go.Scatter(x=val_epochs, y=history["val_loss"], mode="lines+markers",
+            go.Scatter(x=ve, y=history["val_loss"], mode="lines+markers",
                        name="Val Loss", line=dict(color="#F59E0B", width=2), marker=dict(size=4)),
             row=1, col=1,
         )
 
     if history.get("mAP50"):
-        map_epochs = list(range(1, len(history["mAP50"]) + 1))
+        ve = history.get("val_epochs", list(range(1, len(history["mAP50"]) + 1)))
         fig.add_trace(
-            go.Scatter(x=map_epochs, y=history["mAP50"], mode="lines+markers",
+            go.Scatter(x=ve, y=history["mAP50"], mode="lines+markers",
                        name="mAP@0.5", line=dict(color="#10B981", width=2), marker=dict(size=5)),
             row=1, col=2,
         )
@@ -1021,14 +1057,15 @@ def _render_full_log(log_path):
         content = f.read()
     lines = content.strip().split("\n") if content.strip() else []
 
-    # Detect errors in log output
-    has_error = False
+    # Detect the LAST error block (Traceback + exception)
     error_lines = []
-    for line in lines:
-        if any(kw in line for kw in ("Traceback", "Error:", "Exception:", "FAILED", "TypeError", "ValueError", "RuntimeError")):
-            has_error = True
-        if has_error:
-            error_lines.append(line)
+    last_tb_start = -1
+    for i, line in enumerate(lines):
+        if "Traceback" in line:
+            last_tb_start = i
+    if last_tb_start >= 0:
+        error_lines = lines[last_tb_start:]
+    has_error = bool(error_lines)
 
     lc1, lc2, lc3 = st.columns([4, 1, 1])
     with lc1:
@@ -1576,7 +1613,7 @@ _get_dir_size = dir_size_str
 def _cleanup_run_keep_best(run_dir: str) -> int:
     """Remove non-essential files from a run, keeping final/best models and results."""
     keep = {
-        "checkpoint_best.pth", "results.json", "training_log.csv",
+        "checkpoint_best.pth", "training_log.csv",
         "model_best_inference.pth", "model_best_fp16.pth",
         "model_final_inference.pth", "model_final_fp16.pth",
         "model.onnx", "model.onnx.data",
@@ -1584,7 +1621,7 @@ def _cleanup_run_keep_best(run_dir: str) -> int:
     removed = 0
     for f in os.listdir(run_dir):
         fpath = os.path.join(run_dir, f)
-        if os.path.isfile(fpath) and f not in keep:
+        if os.path.isfile(fpath) and f not in keep and not f.endswith(".log"):
             os.remove(fpath)
             removed += 1
         elif os.path.isdir(fpath) and f in ("visualizations", "gt_verification", "plots"):
@@ -1897,17 +1934,19 @@ def _run_flashdet_training():
 
     # Pretrained / resume
     pretrain_option = st.session_state.get("pretrain_option", "COCO pretrained")
-    pretrained_ckpt = None
+    finetune_path = None
     if pretrain_option == "Custom":
-        pretrained_ckpt = st.session_state.get("custom_weights", "")
+        finetune_path = st.session_state.get("custom_weights", "")
 
     resume_ckpt = None
     if st.session_state.get("resume_training", False):
         resume_ckpt = st.session_state.get("resume_path", "")
+        st.session_state["resume_training"] = False
 
     # Class file
     class_file = st.session_state.get("class_file", None)
-    class_names_raw = st.session_state.get("class_names", "")
+    from flashstudio.utils import get_class_names_str
+    class_names_raw = get_class_names_str()
     if class_names_raw.strip() and not class_file:
         import tempfile
         cls_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, prefix="classes_")
@@ -1923,7 +1962,7 @@ def _run_flashdet_training():
         if "PicoBackbone" in pico_bb or "RepNeXt" in pico_bb:
             backbone_type = "pico_v2"
 
-    pretrained_arg = f'"{pretrained_ckpt}"' if pretrained_ckpt else "None"
+    finetune_arg = f'"{finetune_path}"' if finetune_path else "None"
     resume_arg = f'"{resume_ckpt}"' if resume_ckpt else "None"
     class_file_arg = f'"{class_file}"' if class_file else "None"
 
@@ -1965,7 +2004,7 @@ def _run_flashdet_training():
             compile={compile_model},
             multi_gpu={multi_gpu},
             backbone_type="{backbone_type}",
-            pretrained_ckpt={pretrained_arg},
+            finetune={finetune_arg},
             resume={resume_arg},
             class_file={class_file_arg},
         )
@@ -1984,6 +2023,7 @@ def _run_flashdet_training():
         stdout=log_file_handle, stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    log_file_handle.close()
 
     st.session_state["training_pid"] = process.pid
     st.session_state["training_log_file"] = log_path
@@ -1993,7 +2033,6 @@ def _run_flashdet_training():
     _tw.sleep(2)
     exit_code = process.poll()
     if exit_code is not None:
-        log_file_handle.close()
         st.session_state["training_active"] = False
         st.session_state["training_pid"] = None
         st.session_state["training_status"] = "Failed"
