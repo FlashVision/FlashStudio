@@ -35,6 +35,7 @@ TRAINING_LOG_CSV = "training_log.csv"
 
 # Project root: FlashStudio/ directory (parent of flashstudio/ package)
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = _PROJECT_ROOT
 
 DEFAULT_SAVE_DIR = os.path.join(_PROJECT_ROOT, "flashstudio_workspaces")
 DEFAULT_DATA_DIR = os.path.join(_PROJECT_ROOT, "data")
@@ -118,6 +119,11 @@ IMG_SIZE_OPTIONS = [320, 416, 640]
 
 AUTOREFRESH_INTERVAL_MS = 5000
 MAX_DISPLAY_RUNS = 8
+VIS_QUEUE_SIZE = 3
+
+VIS_DIR_NAMES = ("visualizations", "plots", "vis")
+VIS_SKIP_FILE = "latest_visualization.jpg"
+GT_VERIFICATION_DIR = "gt_verification"
 
 # ════════════════════════════════════════
 # MODEL ARCHITECTURE
