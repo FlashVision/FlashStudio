@@ -1,189 +1,214 @@
-"""FlashStudio — Dashboard Page."""
+"""FlashStudio — Dashboard."""
 
 import os
 import json
+import time
 import glob as glob_module
-
 import streamlit as st
 from flashstudio.components.styles import render_page_header
-from flashstudio.utils.device import get_gpu_info, get_colab_runtime_type
+from flashstudio.utils.device import get_gpu_info
 
 
 def render_dashboard():
-    """Render the main dashboard with overview and quick-start."""
-    from flashstudio.components.project_manager import get_active_project, get_project_stats, get_project_dir
+    from flashstudio.components.project_manager import get_active_project, get_project_stats
 
-    render_page_header("⚡", "FlashStudio Dashboard",
-                       "End-to-end object detection: Data → Model → Train → Export → Inference")
+    render_page_header("", "Dashboard")
 
-    # Active project banner
-    project = get_active_project()
-    if project:
-        with st.container(border=True):
-            col_proj, col_stats = st.columns([2, 3])
-            with col_proj:
-                st.markdown(f"### 📋 {project['name']}")
-                if project.get("description"):
-                    st.caption(project["description"])
-            with col_stats:
-                stats = get_project_stats(project["id"])
-                sc1, sc2, sc3, sc4 = st.columns(4)
-                with sc1:
-                    st.metric("Runs", stats["runs"])
-                with sc2:
-                    map_str = f"{stats['best_map']:.4f}" if stats["best_map"] else "—"
-                    st.metric("Best mAP", map_str)
-                with sc3:
-                    st.metric("Size", stats["total_size"])
-                with sc4:
-                    st.metric("Export", "✅" if stats["has_export"] else "—")
-
-    # Top metrics row
-    col1, col2, col3, col4 = st.columns(4)
     gpu = get_gpu_info()
-    with col1:
-        st.metric("🖥️ GPU", gpu["name"] if gpu["available"] else "CPU")
-    with col2:
-        st.metric("🌐 Runtime", get_colab_runtime_type())
-    with col3:
-        mem = f"{gpu['memory_total']:.1f} GB" if gpu["available"] else "—"
-        st.metric("💾 VRAM", mem)
-    with col4:
-        st.metric("📦 FlashDet", _get_flashdet_version())
+    project = get_active_project()
+    stats = get_project_stats(project["id"]) if project else None
 
-    st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
-
-    # Main content
-    col_left, col_right = st.columns([2, 1])
-
-    with col_left:
-        with st.container(border=True):
-            st.markdown("### 🚀 Quick Start Guide")
-            st.markdown("""
-| Step | Action | Description |
-|:----:|--------|-------------|
-| 1 | **📦 Data** | Upload your dataset or download an open-source one |
-| 2 | **🧠 Model** | Choose architecture & configure training parameters |
-| 3 | **🏋️ Train** | Start training and monitor real-time progress |
-| 4 | **📤 Export** | Convert to ONNX for deployment |
-| 5 | **🔍 Inference** | Test your model on images, video, or RTSP |
-            """)
-            st.caption("Click **Next** below or use the sidebar to jump to any step.")
-
-    with col_right:
-        with st.container(border=True):
-            st.markdown("### 📊 Session Info")
-            dataset = st.session_state.get("dataset_name", "Not selected")
-            model = st.session_state.get("model_arch", "FlashDet-Pico")
-            status = st.session_state.get("training_status", "Not started")
-
-            st.markdown(f"**Dataset:** {dataset}")
-            st.markdown(f"**Model:** {model}")
-            st.markdown(f"**Training:** {status}")
-
-            if st.session_state.get("best_map"):
-                st.metric("Best mAP", f"{st.session_state['best_map']:.4f}")
-            if st.session_state.get("exported_model"):
-                st.markdown(f"**Exported:** {st.session_state['exported_model']}")
-
-    st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
-
-    # Recent training runs
-    _render_recent_runs()
-
-    # Supported models table (correct data)
-    with st.container(border=True):
-        st.markdown("### 🔗 Supported Architectures")
-        models_data = [
-            ["FlashDet-Pico", "LiteBackbone (0.5x)", "~298K", "Ultra-fast", "Edge / MCU"],
-            ["FlashDet-Nano", "FlashBackbone (stem=32)", "~790K", "Very fast", "Embedded / IoT"],
-            ["FlashDet-Small", "FlashBackbone (stem=48)", "~1.8M", "Fast", "General purpose"],
-            ["FlashDet-Medium", "FlashBackbone (stem=64)", "~3.6M", "Balanced", "High accuracy"],
-            ["FlashDet-Large", "FlashBackbone (stem=80)", "~5.8M", "Accurate", "High accuracy"],
-            ["FlashDet-X", "FlashBackbone (stem=96)", "~9.0M", "Max accuracy", "Server"],
-            ["YOLOv8", "YOLOv8Backbone", "Varies", "Fast", "General YOLO"],
-            ["YOLOv9", "YOLOv9Backbone", "Varies", "Fast", "PGI-based"],
-            ["YOLOv10", "YOLOv10Backbone", "Varies", "Fast", "PSA-enhanced"],
-            ["YOLOv11", "YOLOv11Backbone", "Varies", "Fast", "C2PSA-based"],
-            ["YOLOX", "YOLOXBackbone", "Varies", "Fast", "Anchor-free"],
-        ]
-        st.dataframe(
-            {
-                "Model": [m[0] for m in models_data],
-                "Backbone": [m[1] for m in models_data],
-                "Params": [m[2] for m in models_data],
-                "Speed": [m[3] for m in models_data],
-                "Best For": [m[4] for m in models_data],
-            },
-            use_container_width=True,
-            hide_index=True,
+    # ── Project info banner ──
+    if project:
+        proj_name = project.get("name", "Untitled")
+        proj_desc = project.get("description", "")
+        created = project.get("created", "")[:10]
+        modified = project.get("last_modified", "")[:10]
+        st.markdown(
+            f'<div style="background:#F5F3FF;border-left:4px solid #7C3AED;padding:0.8rem 1rem;'
+            f'border-radius:0 8px 8px 0;margin-bottom:0.8rem;">'
+            f'<div style="font-size:1.1rem;font-weight:700;color:#1A1A2E;">{proj_name}</div>'
+            f'{"<div style=font-size:0.85rem;color:#6B7280;margin-top:0.2rem;>" + proj_desc + "</div>" if proj_desc else ""}'
+            f'<div style="font-size:0.78rem;color:#9CA3AF;margin-top:0.3rem;">Created: {created} · Modified: {modified}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
-        st.caption("All architectures use fixed backbone/neck/head — only FlashDet-Pico allows backbone choice (lite vs pico_v2).")
+
+    # ── Key metrics — large numbers ──
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        with st.container(border=True):
+            gpu_name = gpu["name"][:18] if gpu["available"] else "CPU only"
+            vram = f"{gpu['memory_total']:.0f} GB" if gpu["available"] else "—"
+            st.markdown(
+                f'<div style="text-align:center;padding:0.4rem 0;">'
+                f'<div style="font-size:0.78rem;color:#6B7280;font-weight:500;">GPU</div>'
+                f'<div style="font-size:1.4rem;font-weight:800;color:#1A1A2E;">{gpu_name}</div>'
+                f'<div style="font-size:0.75rem;color:#9CA3AF;">VRAM: {vram}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    with m2:
+        with st.container(border=True):
+            ds_name = (st.session_state.get("dataset_name") or "Not loaded")[:18]
+            train_path = st.session_state.get("train_img_path", "")
+            img_count = 0
+            if train_path and os.path.isdir(train_path):
+                img_count = len([f for f in os.listdir(train_path) if f.lower().endswith((".jpg", ".png", ".jpeg"))])
+            st.markdown(
+                f'<div style="text-align:center;padding:0.4rem 0;">'
+                f'<div style="font-size:0.78rem;color:#6B7280;font-weight:500;">Dataset</div>'
+                f'<div style="font-size:1.4rem;font-weight:800;color:#1A1A2E;">{ds_name}</div>'
+                f'<div style="font-size:0.75rem;color:#9CA3AF;">{img_count} images</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    with m3:
+        with st.container(border=True):
+            model = st.session_state.get("model_arch", "FlashDet-Pico")
+            model_short = model.replace("FlashDet-", "")
+            epochs = st.session_state.get("epochs", 100)
+            st.markdown(
+                f'<div style="text-align:center;padding:0.4rem 0;">'
+                f'<div style="font-size:0.78rem;color:#6B7280;font-weight:500;">Model</div>'
+                f'<div style="font-size:1.4rem;font-weight:800;color:#1A1A2E;">{model_short}</div>'
+                f'<div style="font-size:0.75rem;color:#9CA3AF;">{epochs} epochs</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    with m4:
+        with st.container(border=True):
+            best_map = f"{stats['best_map']:.3f}" if stats and stats["best_map"] else "—"
+            runs_count = stats["runs"] if stats else 0
+            st.markdown(
+                f'<div style="text-align:center;padding:0.4rem 0;">'
+                f'<div style="font-size:0.78rem;color:#6B7280;font-weight:500;">Best mAP</div>'
+                f'<div style="font-size:1.4rem;font-weight:800;color:{"#10B981" if best_map != "—" else "#1A1A2E"};">{best_map}</div>'
+                f'<div style="font-size:0.75rem;color:#9CA3AF;">{runs_count} runs</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    # ── Two panels: Pipeline Status | Quick Actions ──
+    left, right = st.columns(2)
+
+    with left:
+        with st.container(border=True):
+            st.markdown("#### Pipeline Status")
+            _pipeline_status()
+
+    with right:
+        with st.container(border=True):
+            st.markdown("#### Quick Actions")
+            ac1, ac2 = st.columns(2)
+            with ac1:
+                if st.button("Upload Data", use_container_width=True, key="dash_goto_data"):
+                    st.session_state["current_step"] = 1
+                    st.rerun()
+                if st.button("Configure Model", use_container_width=True, key="dash_goto_model"):
+                    st.session_state["current_step"] = 2
+                    st.rerun()
+            with ac2:
+                if st.button("Start Training", use_container_width=True, type="primary", key="dash_goto_train"):
+                    st.session_state["current_step"] = 3
+                    st.rerun()
+                if st.button("Run Inference", use_container_width=True, key="dash_goto_infer"):
+                    st.session_state["current_step"] = 5
+                    st.rerun()
+
+    # ── Recent Runs ──
+    with st.container(border=True):
+        st.markdown("#### Recent Runs")
+        _runs()
 
 
-def _render_recent_runs():
-    """Show recent training runs from workspace."""
-    workspace_candidates = [
+def _pipeline_status():
+    ds = st.session_state.get("dataset_name")
+    model = st.session_state.get("model_arch")
+    train_status = st.session_state.get("training_status", "")
+    exported = st.session_state.get("exported_files")
+
+    steps = [
+        ("Data", ds is not None, ds or "Not loaded"),
+        ("Model", model is not None, model.replace("FlashDet-", "") if model else "Not set"),
+        ("Training", train_status in ("Completed", "Running"), train_status or "Not started"),
+        ("Export", exported is not None, "Ready" if exported else "Pending"),
+    ]
+
+    for label, done, detail in steps:
+        color = "#10B981" if done else "#D1D5DB"
+        text_color = "#1A1A2E" if done else "#9CA3AF"
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:0.6rem;padding:0.35rem 0;'
+            f'border-bottom:1px solid #F0F0F5;">'
+            f'<div style="width:10px;height:10px;border-radius:50%;background:{color};flex-shrink:0;"></div>'
+            f'<div style="flex:1;">'
+            f'<span style="font-size:0.85rem;font-weight:600;color:{text_color};">{label}</span>'
+            f'<span style="font-size:0.78rem;color:#9CA3AF;margin-left:0.5rem;">{detail}</span>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+
+
+def _runs():
+    from flashstudio.components.project_manager import get_active_project, get_project_dir
+
+    candidates = []
+    active_proj = get_active_project()
+    if active_proj:
+        candidates.append(os.path.join(get_project_dir(active_proj["id"]), "runs"))
+    candidates += [
         os.path.join(os.getcwd(), "workspace"),
         os.path.join(os.getcwd(), "..", "FlashDet", "workspace"),
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "FlashDet", "workspace"),
     ]
-
-    workspace = None
-    for c in workspace_candidates:
+    ws = None
+    for c in candidates:
         c = os.path.abspath(c)
         if os.path.isdir(c):
-            workspace = c
-            break
+            ws = c; break
 
-    if not workspace:
+    if not ws:
+        st.caption("No workspace found. Start training to create runs.")
         return
 
-    runs = sorted(
-        [d for d in os.listdir(workspace) if os.path.isdir(os.path.join(workspace, d))],
-        key=lambda d: os.path.getmtime(os.path.join(workspace, d)),
-        reverse=True,
-    )[:5]
+    dirs = sorted(
+        [d for d in os.listdir(ws) if os.path.isdir(os.path.join(ws, d))],
+        key=lambda d: os.path.getmtime(os.path.join(ws, d)), reverse=True,
+    )[:8]
 
-    if not runs:
+    if not dirs:
+        st.caption("No runs yet. Go to Training to start your first run.")
         return
 
-    with st.container(border=True):
-        st.markdown("### 🕐 Recent Training Runs")
+    for name in dirs:
+        rd = os.path.join(ws, name)
+        has_best = os.path.isfile(os.path.join(rd, "checkpoint_best.pth"))
+        status = "Done" if has_best else "—"
+        info = ""
+        rp = os.path.join(rd, "results.json")
+        if os.path.isfile(rp):
+            try:
+                with open(rp) as f:
+                    r = json.load(f)
+                info = f"mAP {r.get('best_mAP50', 0):.3f}"
+            except Exception:
+                pass
 
-        for run_name in runs:
-            run_dir = os.path.join(workspace, run_name)
-            # Try to get results summary
-            results_path = os.path.join(run_dir, "results.json")
-            log_files = glob_module.glob(os.path.join(run_dir, "train_*.log"))
+        mtime = os.path.getmtime(rd)
+        date_str = time.strftime("%b %d, %H:%M", time.localtime(mtime))
+        status_color = "#10B981" if has_best else "#9CA3AF"
 
-            col_name, col_info, col_status = st.columns([2, 3, 1])
-            with col_name:
-                st.markdown(f"**{run_name}**")
-            with col_info:
-                if os.path.isfile(results_path):
-                    with open(results_path) as f:
-                        results = json.load(f)
-                    mAP = results.get("best_mAP50", 0)
-                    epochs = results.get("epochs_trained", "?")
-                    st.caption(f"mAP: {mAP:.4f} · {epochs} epochs")
-                elif log_files:
-                    st.caption("Training in progress / incomplete")
-                else:
-                    st.caption("No data")
-            with col_status:
-                has_best = os.path.isfile(os.path.join(run_dir, "checkpoint_best.pth"))
-                if has_best:
-                    st.caption("✅ Done")
-                elif log_files:
-                    st.caption("🔄 Active")
-                else:
-                    st.caption("—")
-
-
-def _get_flashdet_version() -> str:
-    try:
-        import flashdet
-        return getattr(flashdet, "__version__", "installed")
-    except Exception:
-        return "not installed"
+        st.markdown(
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'font-size:0.85rem;padding:0.4rem 0;border-bottom:1px solid #F0F0F5;">'
+            f'<div>'
+            f'<span style="font-weight:600;color:#1A1A2E;">{name[:25]}</span>'
+            f'<span style="color:#9CA3AF;font-size:0.75rem;margin-left:0.5rem;">{date_str}</span>'
+            f'</div>'
+            f'<div style="display:flex;gap:0.8rem;align-items:center;">'
+            f'<span style="color:#6B7280;">{info}</span>'
+            f'<span style="color:{status_color};font-weight:600;">{status}</span>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )

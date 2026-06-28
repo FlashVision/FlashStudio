@@ -266,7 +266,7 @@ def render_project_selector():
         "Active Project",
         range(len(projects)),
         index=active_idx,
-        format_func=lambda i: f"📁 {projects[i]['name']}",
+        format_func=lambda i: projects[i]['name'],
         key="project_selector",
     )
 
@@ -282,7 +282,6 @@ def render_project_manager_page():
     """Full project management page — create, switch, delete, manage projects."""
     st.markdown(
         "<div style='text-align:center; padding:1rem 0;'>"
-        "<span style='font-size:2rem;'>📋</span> "
         "<b style='font-size:1.4rem;'>Project Manager</b>"
         "</div>",
         unsafe_allow_html=True,
@@ -294,7 +293,7 @@ def render_project_manager_page():
 
     # ─── Create New Project ───
     with st.container(border=True):
-        st.markdown("### ➕ Create New Project")
+        st.markdown("### Create New Project")
         col_name, col_desc, col_btn = st.columns([2, 3, 1])
         with col_name:
             new_name = st.text_input("Project Name", placeholder="e.g. PPE Detection v2",
@@ -308,7 +307,7 @@ def render_project_manager_page():
             if st.button("Create", type="primary", key="create_project_btn",
                          use_container_width=True, disabled=not new_name):
                 proj = create_project(new_name, new_desc)
-                st.success(f"✅ Project **{new_name}** created!")
+                st.success(f"Project **{new_name}** created!")
                 _clear_session_for_new_project()
                 st.rerun()
 
@@ -317,7 +316,7 @@ def render_project_manager_page():
         st.info("No projects yet. Create your first project above to get started.")
         return
 
-    st.markdown(f"### 📁 Your Projects ({len(projects)})")
+    st.markdown(f"### Your Projects ({len(projects)})")
 
     for p in sorted(projects, key=lambda x: x.get("last_modified", ""), reverse=True):
         is_active = p["id"] == active_id
@@ -351,22 +350,22 @@ def render_project_manager_page():
                 ac1, ac2, ac3 = st.columns(3)
                 with ac1:
                     if not is_active:
-                        if st.button("📂", key=f"switch_{p['id']}", help="Switch to this project"):
+                        if st.button("Open", key=f"switch_{p['id']}", help="Switch to this project"):
                             save_project_state()
                             switch_project(p["id"])
                             st.rerun()
                 with ac2:
-                    if st.button("📋", key=f"dup_{p['id']}", help="Duplicate project"):
+                    if st.button("Copy", key=f"dup_{p['id']}", help="Duplicate project"):
                         dup = duplicate_project(p["id"], f"{p['name']} (copy)")
                         st.success(f"Duplicated as '{dup['name']}'")
                         st.rerun()
                 with ac3:
-                    if st.button("🗑️", key=f"del_{p['id']}", help="Delete project"):
+                    if st.button("Del", key=f"del_{p['id']}", help="Delete project"):
                         st.session_state[f"confirm_delete_{p['id']}"] = True
 
             # Delete confirmation
             if st.session_state.get(f"confirm_delete_{p['id']}"):
-                st.error(f"⚠️ Delete project **{p['name']}** and ALL its data? This cannot be undone.")
+                st.error(f"Delete project **{p['name']}** and ALL its data? This cannot be undone.")
                 dc1, dc2, dc3 = st.columns([1, 1, 3])
                 with dc1:
                     if st.button("Yes, Delete", key=f"confirm_del_{p['id']}", type="primary"):
@@ -380,11 +379,11 @@ def render_project_manager_page():
 
     # ─── Danger Zone ───
     st.divider()
-    with st.expander("⚠️ Danger Zone", expanded=False):
+    with st.expander("Danger Zone", expanded=False):
         st.error("These actions are irreversible!")
         col_d1, col_d2 = st.columns(2)
         with col_d1:
-            if st.button("🗑️ Delete ALL Projects", key="delete_all_projects"):
+            if st.button("Delete ALL Projects", key="delete_all_projects"):
                 st.session_state["confirm_delete_all"] = True
 
         if st.session_state.get("confirm_delete_all"):

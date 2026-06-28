@@ -10,8 +10,17 @@ def is_colab() -> bool:
         return False
 
 
+def has_cuda() -> bool:
+    """Check if CUDA GPU is available."""
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
+
+
 def get_device() -> str:
-    """Get the best available device."""
+    """Get the best available device string."""
     try:
         import torch
         if torch.cuda.is_available():

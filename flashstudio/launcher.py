@@ -5,13 +5,7 @@ import sys
 import os
 from pathlib import Path
 
-
-def _is_colab() -> bool:
-    try:
-        import google.colab  # noqa: F401
-        return True
-    except ImportError:
-        return False
+from flashstudio.utils.device import is_colab
 
 
 def _get_app_path() -> str:
@@ -28,7 +22,7 @@ def launch(port: int = 8501, share: bool = True, ngrok_token: str | None = None)
     """
     app_path = _get_app_path()
 
-    if _is_colab():
+    if is_colab():
         _launch_colab(app_path, port, share, ngrok_token)
     else:
         _launch_local(app_path, port)

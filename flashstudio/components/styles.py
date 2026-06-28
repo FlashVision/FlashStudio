@@ -1,273 +1,304 @@
-"""FlashStudio — Custom CSS Styles matching the professional mockup (light theme)."""
+"""FlashStudio — Professional CSS (readable, clean layout)."""
 
 import streamlit as st
 
 
 def inject_custom_css():
-    """Inject custom CSS to match the professional mockup design — light theme, dark sidebar."""
+    """Professional-grade CSS — clean, readable, well-spaced."""
     st.markdown("""
     <style>
-    /* ═══════ Global ═══════ */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-    .stApp {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    /* ═══════ GLOBAL ═══════ */
+    .stApp { font-family: 'Inter', -apple-system, sans-serif; }
+
+    .main .block-container {
+        padding: 0.8rem 1.5rem 0.5rem !important;
+        max-width: 1500px;
     }
 
-    /* ═══════ Sidebar ═══════ */
+    .main .stMarkdown { margin-bottom: 0 !important; }
+    .main .element-container { margin-bottom: 0.15rem !important; }
+    .main div[data-testid="stVerticalBlock"] > div { gap: 0.35rem !important; }
+    .main hr { margin: 0.3rem 0 !important; border-color: #E5E7EB !important; }
+
+    /* ═══════ SIDEBAR ═══════ */
     section[data-testid="stSidebar"] {
         background: #FAFBFC !important;
-        border-right: 1px solid #E8E8EF;
-        width: 240px !important;
+        border-right: 1px solid #E5E7EB;
+        width: 210px !important;
     }
 
     section[data-testid="stSidebar"] > div {
-        width: 240px !important;
-        padding: 1rem 0.8rem !important;
+        width: 210px !important;
+        padding: 0.5rem 0.5rem !important;
     }
 
     section[data-testid="stSidebar"] hr {
-        border-color: #E8E8EF !important;
+        border-color: #E5E7EB !important;
         margin: 0.4rem 0 !important;
     }
 
     section[data-testid="stSidebar"] .stButton > button {
         font-size: 0.82rem !important;
-        padding: 0.4rem 0.7rem !important;
+        padding: 0.38rem 0.7rem !important;
         border-radius: 6px !important;
         text-align: left !important;
         justify-content: flex-start !important;
         min-height: 0 !important;
         height: auto !important;
+        transition: all 0.15s ease;
     }
 
     section[data-testid="stSidebar"] .stButton > button[kind="secondary"] {
         background: transparent !important;
         border: none !important;
-        color: #374151 !important;
+        color: #4B5563 !important;
     }
 
     section[data-testid="stSidebar"] .stButton > button[kind="secondary"]:hover {
-        background: #F5F3FF !important;
+        background: #EEF2FF !important;
         color: #7C3AED !important;
     }
 
     section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-        background: #F5F3FF !important;
-        border: 1px solid #EDE9FE !important;
+        background: #EEF2FF !important;
+        border: none !important;
         color: #7C3AED !important;
         font-weight: 600 !important;
+        border-left: 3px solid #7C3AED !important;
+        border-radius: 0 6px 6px 0 !important;
     }
 
-    /* Hide Streamlit's auto multipage nav */
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
+    [data-testid="stSidebarNav"] { display: none !important; }
 
-    /* ═══════ Main Content ═══════ */
-    .stApp > header {
-        background: transparent;
-    }
-
-    /* ═══════ Metric Cards ═══════ */
+    /* ═══════ METRIC CARDS ═══════ */
     div[data-testid="stMetric"] {
-        background: #FFFFFF;
-        border: 1px solid #E8E8EF;
-        border-radius: 12px;
-        padding: 1rem 1.2rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-        transition: transform 0.2s, box-shadow 0.2s;
-    }
-
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.08);
+        background: #FFF;
+        border: 1px solid #E5E7EB;
+        border-radius: 8px;
+        padding: 0.6rem 0.8rem !important;
     }
 
     div[data-testid="stMetric"] label {
         font-size: 0.75rem !important;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.04em;
         color: #6B7280 !important;
-        font-weight: 500;
+        font-weight: 600;
+        margin-bottom: 0.1rem !important;
     }
 
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        font-size: 1.6rem !important;
+        font-size: 1.15rem !important;
         font-weight: 700;
         color: #1A1A2E !important;
+        line-height: 1.3;
     }
 
-    /* ═══════ Primary Buttons ═══════ */
+    /* ═══════ BUTTONS ═══════ */
+    .main .stButton > button {
+        font-size: 0.82rem !important;
+        padding: 0.3rem 0.7rem !important;
+        min-height: 0 !important;
+        border-radius: 6px;
+        transition: all 0.15s ease;
+    }
+
     .main .stButton > button[kind="primary"] {
         background: #7C3AED !important;
         border: none;
-        border-radius: 8px;
         font-weight: 600;
-        color: #FFFFFF !important;
-        letter-spacing: 0.02em;
-        transition: all 0.2s;
+        color: #FFF !important;
     }
 
     .main .stButton > button[kind="primary"]:hover {
         background: #6D28D9 !important;
-        box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
-        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(124, 58, 237, 0.2);
     }
 
     .main .stButton > button[kind="secondary"] {
-        border-radius: 8px;
-        border: 1px solid #E8E8EF !important;
-        font-weight: 500;
-        color: #1A1A2E !important;
+        border: 1px solid #E5E7EB !important;
+        color: #374151 !important;
     }
 
-    .main .stButton > button[kind="secondary"]:hover {
-        border-color: #7C3AED !important;
-        color: #7C3AED !important;
-    }
-
-    /* ═══════ Containers / Cards ═══════ */
+    /* ═══════ CONTAINERS ═══════ */
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        border-radius: 12px !important;
-        border-color: #E8E8EF !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+        border-radius: 8px !important;
+        border-color: #E5E7EB !important;
     }
 
-    /* ═══════ Step Indicator ═══════ */
+    div[data-testid="stExpander"] {
+        border-radius: 8px !important;
+        border: 1px solid #E5E7EB !important;
+    }
+
+    /* ═══════ TABS ═══════ */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.4rem;
+        border-bottom: 1px solid #E5E7EB;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 500;
+        font-size: 0.82rem;
+        color: #6B7280;
+        padding: 0.35rem 0.6rem;
+    }
+
+    .stTabs [aria-selected="true"] {
+        color: #7C3AED !important;
+        font-weight: 600;
+        border-bottom: 2px solid #7C3AED !important;
+    }
+
+    /* ═══════ FORM INPUTS ═══════ */
+    .main .stSelectbox > div > div,
+    .main .stTextInput > div > div > input,
+    .main .stNumberInput > div > div > input {
+        font-size: 0.84rem !important;
+        padding: 0.3rem 0.5rem !important;
+        border-radius: 6px;
+    }
+
+    .main .stSelectbox label,
+    .main .stTextInput label,
+    .main .stNumberInput label,
+    .main .stSlider label,
+    .main .stCheckbox label,
+    .main .stRadio label,
+    .main .stFileUploader label,
+    .main .stTextArea label {
+        font-size: 0.82rem !important;
+        margin-bottom: 0 !important;
+    }
+
+    .main .stCheckbox { margin-bottom: 0 !important; }
+    .main .stSlider > div { padding-top: 0 !important; }
+    .stSlider > div > div > div > div { background: #7C3AED !important; }
+
+    /* ═══════ HEADINGS ═══════ */
+    .main h1 { font-size: 1.25rem !important; margin: 0.1rem 0 !important; font-weight: 700; }
+    .main h2 { font-size: 1.05rem !important; margin: 0.15rem 0 !important; font-weight: 600; }
+    .main h3 { font-size: 0.92rem !important; margin: 0.1rem 0 !important; font-weight: 600; color: #1A1A2E; }
+    .main h4 { font-size: 0.85rem !important; margin: 0.1rem 0 !important; font-weight: 600; color: #374151; }
+
+    /* ═══════ EXPANDER ═══════ */
+    .streamlit-expanderHeader {
+        font-weight: 600;
+        font-size: 0.82rem;
+        padding: 0.3rem 0.5rem !important;
+    }
+
+    /* ═══════ STEP INDICATOR ═══════ */
     .step-indicator {
         display: flex;
         justify-content: center;
-        gap: 0.3rem;
-        padding: 0.5rem 0.5rem;
-        margin-bottom: 1rem;
-        background: #FAFAFA;
-        border-radius: 8px;
-        border: 1px solid #F0F0F5;
+        gap: 0.1rem;
+        padding: 0.25rem 0;
+        margin-bottom: 0.3rem;
     }
 
-    .step-item {
-        text-align: center;
-        flex: 1;
-        position: relative;
-    }
-
-    .step-icon { font-size: 1.3rem; display: block; }
-    .step-label { font-size: 0.7rem; margin-top: 0.2rem; font-weight: 500; color: #6B7280; }
-    .step-bar { height: 3px; border-radius: 2px; margin-top: 0.4rem; }
-
+    .step-item { text-align: center; flex: 1; }
+    .step-icon { font-size: 0.9rem; display: block; }
+    .step-label { font-size: 0.68rem; font-weight: 500; color: #6B7280; }
+    .step-bar { height: 2px; border-radius: 1px; margin-top: 0.15rem; }
     .step-active .step-label { color: #7C3AED; font-weight: 700; }
     .step-active .step-bar { background: #7C3AED; }
     .step-done .step-bar { background: #10B981; }
     .step-pending .step-bar { background: #E5E7EB; }
     .step-pending .step-label { opacity: 0.5; }
 
-    /* ═══════ Progress Bar ═══════ */
+    /* ═══════ PIPELINE ═══════ */
+    .pipeline-steps {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.15rem;
+        padding: 0.25rem 0;
+        margin-bottom: 0.2rem;
+    }
+
+    .pipeline-step {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    .pipeline-arrow { color: #D1D5DB; font-size: 0.65rem; }
+    .ps-done { background: #ECFDF5; color: #065F46; }
+    .ps-active { background: #FEF3C7; color: #92400E; }
+    .ps-pending { background: #F9FAFB; color: #9CA3AF; }
+
+    /* ═══════ INFO BAR ═══════ */
+    .info-bar {
+        background: #F8F7FF;
+        border: 1px solid #EDE9FE;
+        border-radius: 6px;
+        padding: 0.35rem 0.8rem;
+        text-align: center;
+        font-size: 0.78rem;
+        color: #6B21A8;
+    }
+    .info-bar b { color: #1A1A2E; }
+
+    /* ═══════ STAT ROW ═══════ */
+    .ds-card-stats {
+        display: flex;
+        gap: 0.6rem;
+        font-size: 0.78rem;
+        color: #6B7280;
+        flex-wrap: wrap;
+        line-height: 1.4;
+    }
+    .ds-card-stats span { white-space: nowrap; }
+
+    /* ═══════ ALERTS ═══════ */
+    .stAlert { padding: 0.35rem 0.6rem !important; font-size: 0.82rem !important; }
+
+    /* ═══════ CAPTION ═══════ */
+    .main .stCaption, .main small { font-size: 0.75rem !important; }
+
+    /* ═══════ PROGRESS ═══════ */
     .stProgress > div > div {
         background: linear-gradient(90deg, #7C3AED, #A78BFA) !important;
-        border-radius: 4px;
+        border-radius: 3px;
     }
 
-    /* ═══════ Tabs ═══════ */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
-        border-bottom: 2px solid #F0F0F5;
-    }
-
-    .stTabs [data-baseweb="tab"] {
-        font-weight: 500;
-        color: #6B7280;
-    }
-
-    .stTabs [aria-selected="true"] {
-        color: #7C3AED !important;
-        font-weight: 600;
-    }
-
-    /* ═══════ Info Bar (bottom) ═══════ */
-    .info-bar {
-        background: #F5F3FF;
-        border: 1px solid #EDE9FE;
-        border-radius: 8px;
-        padding: 0.6rem 1.2rem;
-        text-align: center;
-        font-size: 0.8rem;
-        margin-top: 1.5rem;
-        color: #4C1D95;
-    }
-
-    .info-bar b {
-        color: #1A1A2E;
-    }
-
-    /* ═══════ File Uploader ═══════ */
+    /* ═══════ FILE UPLOADER ═══════ */
     [data-testid="stFileUploader"] section {
-        border-radius: 12px;
-        border: 2px dashed #D4D4D8 !important;
-        transition: border-color 0.2s;
+        border-radius: 6px;
+        border: 2px dashed #D1D5DB !important;
+        padding: 0.6rem !important;
     }
+    [data-testid="stFileUploader"] section:hover { border-color: #7C3AED !important; }
 
-    [data-testid="stFileUploader"] section:hover {
-        border-color: #7C3AED !important;
-    }
+    /* ═══════ DATAFRAME ═══════ */
+    .stDataFrame { border-radius: 6px; border: 1px solid #E5E7EB; }
 
-    /* ═══════ Sliders ═══════ */
-    .stSlider > div > div > div > div {
-        background: #7C3AED !important;
-    }
-
-    /* ═══════ Selectbox ═══════ */
-    .main .stSelectbox > div > div {
-        border-radius: 8px;
-        border-color: #E8E8EF;
-    }
-
-    /* ═══════ Dataframe ═══════ */
-    .stDataFrame {
-        border-radius: 8px;
-        overflow: hidden;
-        border: 1px solid #E8E8EF;
-    }
-
-    /* ═══════ Expander ═══════ */
-    .streamlit-expanderHeader {
-        font-weight: 600;
-        color: #1A1A2E;
-    }
-
-    /* ═══════ Download Buttons ═══════ */
-    .stDownloadButton > button[kind="primary"] {
-        background: #7C3AED !important;
-        color: white !important;
-        border-radius: 8px;
-    }
-
+    /* ═══════ DOWNLOAD ═══════ */
     .stDownloadButton > button {
-        border-radius: 8px;
-        border: 1px solid #E8E8EF;
+        border-radius: 6px;
+        font-size: 0.82rem !important;
+        padding: 0.3rem 0.7rem !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
 
 def render_info_bar(items: dict):
-    """Render a professional info bar at the bottom (like mockup)."""
-    inner = "  •  ".join(f"{k}: <b>{v}</b>" for k, v in items.items())
-    st.markdown(
-        f'<div class="info-bar">ℹ️ {inner}</div>',
-        unsafe_allow_html=True,
-    )
+    inner = " · ".join(f"{k}: <b>{v}</b>" for k, v in items.items())
+    st.markdown(f'<div class="info-bar">{inner}</div>', unsafe_allow_html=True)
 
 
-def render_page_header(icon: str, title: str, subtitle: str):
-    """Render a professional page header with icon and subtitle."""
+def render_page_header(icon: str, title: str, subtitle: str = ""):
     st.markdown(
-        f"""<div style="margin-bottom: 1.5rem;">
-            <h1 style="margin:0; display:flex; align-items:center; gap:0.6rem;
-                font-size:1.8rem; font-weight:700; color:#1A1A2E;">
-                <span style="font-size:2rem;">{icon}</span> {title}
-            </h1>
-            <p style="margin:0.4rem 0 0; color:#6B7280; font-size:0.95rem;">{subtitle}</p>
-        </div>""",
+        f'<div style="margin-bottom:0.4rem;">'
+        f'<span style="font-size:1.2rem;font-weight:700;color:#1A1A2E;">{title}</span>'
+        f'</div>',
         unsafe_allow_html=True,
     )

@@ -9,3 +9,9 @@ build/
 .env
 .venv/
 venv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+data/voc2012/
+data/coco2017/
+data/sample/

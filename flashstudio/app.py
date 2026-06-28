@@ -70,9 +70,19 @@ def main():
 
     current = STEPS[st.session_state["current_step"]]
 
+    # #region agent log
+    import json as _json_dbg, time as _time_dbg
+    with open("/home/ggoswami/Project/Gaurav/FlashVision/FlashStudio/.cursor/debug-b7c49a.log", "a") as _f_dbg:
+        _f_dbg.write(_json_dbg.dumps({"sessionId":"b7c49a","location":"app.py:main","message":"page_render","data":{"step":st.session_state["current_step"],"page_id":current["id"],"active_project":str(active_project)},"timestamp":int(_time_dbg.time()*1000),"hypothesisId":"H1"})+"\n")
+    # #endregion
+
     try:
         PAGE_RENDERERS[current["id"]]()
     except Exception as _e:
+        # #region agent log
+        with open("/home/ggoswami/Project/Gaurav/FlashVision/FlashStudio/.cursor/debug-b7c49a.log", "a") as _f_dbg:
+            _f_dbg.write(_json_dbg.dumps({"sessionId":"b7c49a","location":"app.py:main","message":"page_render_error","data":{"page_id":current["id"],"error":str(_e),"traceback":_tb.format_exc()},"timestamp":int(_time_dbg.time()*1000),"hypothesisId":"H5"})+"\n")
+        # #endregion
         st.error(f"Error: {_e}")
         st.code(_tb.format_exc())
 
@@ -84,46 +94,28 @@ def main():
 
 
 def _render_first_time_setup():
-    """Show first-time project creation screen."""
+    """Compact first-time project creation."""
     st.markdown(
-        "<div style='text-align:center; padding:3rem 0 1rem;'>"
-        "<span style='font-size:3rem;'>⚡</span><br>"
-        "<b style='font-size:1.8rem;'>Welcome to FlashStudio</b><br>"
-        "<span style='color:#6B7280;'>Create your first project to get started</span>"
+        "<div style='text-align:center; padding:2rem 0 0.5rem;'>"
+        "<span style='font-size:2.5rem;'>⚡</span><br>"
+        "<b style='font-size:1.3rem;'>Welcome to FlashStudio</b><br>"
+        "<span style='color:#6B7280;font-size:0.9rem;'>Create your first project to get started</span>"
         "</div>",
         unsafe_allow_html=True,
     )
 
     with st.container(border=True):
-        col_form, col_info = st.columns([2, 1])
-
+        col_form, col_info = st.columns([3, 2])
         with col_form:
-            st.markdown("### Create Your First Project")
-            name = st.text_input("Project Name", placeholder="e.g. Traffic Detection",
-                                 key="first_project_name")
-            desc = st.text_input("Description (optional)",
-                                 placeholder="Detect vehicles and pedestrians in traffic camera footage",
-                                 key="first_project_desc")
-
-            if st.button("🚀 Create Project & Start", type="primary",
-                         disabled=not name, use_container_width=True):
+            name = st.text_input("Project Name", placeholder="e.g. Traffic Detection", key="first_project_name")
+            desc = st.text_input("Description (optional)", placeholder="Detect vehicles in traffic footage", key="first_project_desc")
+            if st.button("🚀 Create & Start", type="primary", disabled=not name, use_container_width=True):
                 create_project(name, desc)
                 st.rerun()
-
         with col_info:
-            st.markdown("### What is a Project?")
-            st.markdown("""
-            A project keeps everything organized:
-
-            - **Dataset** — your training/val data
-            - **Model Config** — architecture & hyperparams
-            - **Training Runs** — checkpoints & metrics
-            - **Exports** — ONNX models
-            - **Inference** — test results
-
-            Each project is isolated — switch between
-            projects without losing progress.
-            """)
+            st.markdown("#### What's a Project?")
+            for item in ["📦 Dataset", "🧠 Model config", "🏋️ Training runs", "📤 Exports", "🔍 Inference"]:
+                st.markdown(f'<span style="font-size:0.84rem;color:#4B5563;">{item}</span>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,12 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from flashstudio.utils.device import has_cuda, get_device
+from flashstudio.utils.filesystem import dir_size_str, list_subdirs, count_files, safe_rmtree
+from flashstudio.utils.config import (
+    build_training_config, apply_training_config, config_to_yaml_str, load_config_yaml, save_config_yaml,
+)
+
 
 def _get_default_workspace():
     """Auto-detect workspace: use save_dir from config or scan common locations."""
@@ -32,22 +38,30 @@ def _get_default_workspace():
 
 
 def render_training_page():
-    """Render training dashboard — monitor real FlashDet runs or start new training."""
+    """Render training dashboard — ultra-compact."""
     from flashstudio.components.styles import render_page_header
-    render_page_header("🏋️", "Training Dashboard",
-                       "Monitor real FlashDet training runs — logs, curves, visualizations.")
+    render_page_header("", "Training")
 
     if "training_active" not in st.session_state:
         st.session_state["training_active"] = False
         st.session_state["training_status"] = "Not started"
 
-    tab_start, tab_monitor = st.tabs(["▶️ Start Training", "📊 Monitor Run"])
+    # Inline status
+    is_active = st.session_state.get("training_active", False)
+    pid = st.session_state.get("training_pid")
+    if is_active:
+        if st.session_state.get("training_paused"):
+            st.warning(f"Paused (PID {pid})")
+        else:
+            st.success(f"Running (PID {pid})")
+
+    tab_start, tab_monitor = st.tabs(["Launch", "Monitor"])
 
     with tab_start:
         _render_start_tab()
-
     with tab_monitor:
         _render_monitor_tab()
+
 
 
 def _render_monitor_tab():
@@ -60,15 +74,14 @@ def _render_monitor_tab():
     else:
         default_ws = _get_default_workspace()
 
-    workspace = st.text_input(
-        "Workspace path",
-        value=default_ws,
-        key="workspace_path",
-        help="Path containing training run folders",
-    )
+    wc1, wc2 = st.columns([5, 1])
+    with wc1:
+        workspace = st.text_input("Workspace", value=default_ws, key="workspace_path", label_visibility="collapsed")
+    with wc2:
+        st.caption("Workspace")
 
     if not os.path.isdir(workspace):
-        st.warning(f"Workspace not found: `{workspace}`")
+        st.warning("Workspace not found")
         return
 
     runs = sorted(
@@ -76,146 +89,59 @@ def _render_monitor_tab():
         key=lambda d: os.path.getmtime(os.path.join(workspace, d)),
         reverse=True,
     )
-
     if not runs:
-        st.info("No training runs found in workspace. Start a training first.")
+        st.info("No runs found. Start training first.")
         return
 
-    # ─── Run Selector with metadata ───
-    run_display_names = []
-    run_metas = []
+    # Run selector — compact labels
+    labels = []
     for r in runs:
-        run_path = os.path.join(workspace, r)
-        meta = _get_run_meta(run_path)
-        run_metas.append(meta)
-        # Rich label: status icon + name + model + date + size
-        parts = [meta["status"].split(" ")[0], r]  # status icon + folder name
-        if meta["model"]:
-            parts.append(f"[{meta['model']}]")
+        meta = _get_run_meta(os.path.join(workspace, r))
+        parts = [meta["status"].split(" ")[0], r]
         if meta["mAP"]:
             parts.append(f"mAP={meta['mAP']:.3f}")
-        parts.append(f"({meta['date']})")
         if meta["size"]:
-            parts.append(f"— {meta['size']}")
-        label = " ".join(parts)
-        run_display_names.append(label)
+            parts.append(meta["size"])
+        labels.append(" ".join(parts))
 
-    col_select, col_actions = st.columns([3, 1])
-
-    with col_select:
-        selected_idx = st.selectbox(
-            "Select Training Run",
-            range(len(runs)),
-            format_func=lambda i: run_display_names[i],
-            key="selected_run_idx",
-        )
-
+    sc1, sc2 = st.columns([7, 1])
+    with sc1:
+        selected_idx = st.selectbox("Run", range(len(runs)), format_func=lambda i: labels[i],
+                                    key="selected_run_idx", label_visibility="collapsed")
     selected_run = runs[selected_idx]
     run_dir = os.path.join(workspace, selected_run)
+    with sc2:
+        if st.button("Del", key="delete_run_btn", help="Delete this run"):
+            st.session_state["show_delete_run"] = selected_run
 
-    with col_actions:
-        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        act_col1, act_col2, act_col3 = st.columns(3)
-        with act_col1:
-            if st.button("✏️", key="rename_run_btn", help="Rename this run"):
-                st.session_state["show_rename_run"] = True
-        with act_col2:
-            if st.button("🗑️", key="delete_run_btn", help="Delete this run"):
-                st.session_state["show_delete_run"] = selected_run
-        with act_col3:
-            if st.button("🧹", key="delete_all_runs_btn", help="Delete ALL runs"):
-                st.session_state["show_delete_all_runs"] = True
-
-    # ─── Rename Dialog ───
-    if st.session_state.get("show_rename_run"):
-        with st.container(border=True):
-            st.markdown("#### ✏️ Rename Run")
-            new_name = st.text_input(
-                "New name",
-                value=selected_run,
-                key="rename_run_input",
-                help="Folder will be renamed. Use descriptive names like 'pico_coco_best_run'",
-            )
-            rc1, rc2 = st.columns(2)
-            with rc1:
-                if st.button("Rename", type="primary", key="do_rename_run"):
-                    if new_name and new_name != selected_run:
-                        new_path = os.path.join(workspace, new_name)
-                        if os.path.exists(new_path):
-                            st.error(f"Name `{new_name}` already exists.")
-                        else:
-                            os.rename(run_dir, new_path)
-                            st.success(f"Renamed to `{new_name}`")
-                            st.session_state.pop("show_rename_run", None)
-                            st.rerun()
-            with rc2:
-                if st.button("Cancel", key="cancel_rename_run"):
-                    st.session_state.pop("show_rename_run", None)
-                    st.rerun()
-
-    # ─── Delete Single Run ───
     if st.session_state.get("show_delete_run"):
-        run_to_delete = st.session_state["show_delete_run"]
-        with st.container(border=True):
-            st.error(f"⚠️ Delete run **{run_to_delete}**? This removes all checkpoints, logs, and visualizations.")
-            dc1, dc2 = st.columns(2)
-            with dc1:
-                if st.button("Yes, Delete", type="primary", key="confirm_delete_run"):
-                    import shutil
-                    shutil.rmtree(os.path.join(workspace, run_to_delete))
-                    st.success(f"Deleted `{run_to_delete}`")
-                    st.session_state.pop("show_delete_run", None)
-                    st.rerun()
-            with dc2:
-                if st.button("Cancel", key="cancel_delete_run"):
-                    st.session_state.pop("show_delete_run", None)
-                    st.rerun()
+        dc1, dc2 = st.columns([1, 1])
+        with dc1:
+            if st.button(f"Confirm delete {st.session_state['show_delete_run']}", type="primary", key="confirm_delete_run"):
+                import shutil
+                shutil.rmtree(os.path.join(workspace, st.session_state["show_delete_run"]))
+                st.session_state.pop("show_delete_run", None)
+                st.rerun()
+        with dc2:
+            if st.button("Cancel", key="cancel_delete_run"):
+                st.session_state.pop("show_delete_run", None)
+                st.rerun()
 
-    # ─── Delete ALL Runs ───
-    if st.session_state.get("show_delete_all_runs"):
-        with st.container(border=True):
-            st.error(f"⚠️ Delete ALL **{len(runs)} training runs**? This is permanent!")
-            st.caption("This frees up disk space but removes all checkpoints and logs.")
-            dc1, dc2 = st.columns(2)
-            with dc1:
-                if st.button("DELETE ALL RUNS", type="primary", key="confirm_delete_all_runs"):
-                    import shutil
-                    for r in runs:
-                        shutil.rmtree(os.path.join(workspace, r), ignore_errors=True)
-                    st.success(f"Deleted {len(runs)} runs.")
-                    st.session_state.pop("show_delete_all_runs", None)
-                    st.rerun()
-            with dc2:
-                if st.button("Cancel", key="cancel_delete_all_runs"):
-                    st.session_state.pop("show_delete_all_runs", None)
-                    st.rerun()
-
-    st.divider()
-
-    # ─── Run Info Card ───
+    # Run info — single compact row of metrics
     meta = _get_run_meta(run_dir)
-    with st.container(border=True):
-        st.markdown(f"#### 📂 {selected_run}")
-        info_cols = st.columns(5)
-        with info_cols[0]:
-            st.markdown(f"**Status:** {meta['status']}")
-        with info_cols[1]:
-            st.markdown(f"**Model:** {meta['model'] or '—'}")
-        with info_cols[2]:
-            st.markdown(f"**Epochs:** {meta['epochs']}")
-        with info_cols[3]:
-            mAP_str = f"{meta['mAP']:.3f}" if meta['mAP'] else "—"
-            st.markdown(f"**mAP@50:** {mAP_str}")
-        with info_cols[4]:
-            st.markdown(f"**Size:** {meta['size'] or '—'}")
-
-        info_cols2 = st.columns(3)
-        with info_cols2[0]:
-            st.markdown(f"**Last modified:** {meta['date']}")
-        with info_cols2[1]:
-            st.markdown(f"**Dataset:** {meta['dataset'] or '—'}")
-        with info_cols2[2]:
-            st.markdown(f"**Path:** `{run_dir}`")
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    with m1:
+        st.metric("Status", meta["status"][:10])
+    with m2:
+        st.metric("Model", (meta["model"] or "—")[:12])
+    with m3:
+        st.metric("Epochs", meta["epochs"])
+    with m4:
+        st.metric("mAP@50", f"{meta['mAP']:.3f}" if meta["mAP"] else "—")
+    with m5:
+        st.metric("Size", meta["size"] or "—")
+    with m6:
+        st.metric("Date", meta["date"][:8])
 
     _render_run_dashboard(run_dir)
 
@@ -265,13 +191,13 @@ def _get_run_meta(run_dir: str) -> dict:
     has_log = bool(log_files)
 
     if has_best:
-        meta["status"] = "✅ Complete"
+        meta["status"] = "Complete"
     elif has_last and has_log:
-        meta["status"] = "🔄 In Progress"
+        meta["status"] = "In Progress"
     elif has_log:
-        meta["status"] = "⚠️ Incomplete"
+        meta["status"] = "Incomplete"
     else:
-        meta["status"] = "📁 Empty"
+        meta["status"] = "Empty"
 
     # Try to extract model/dataset from log file header
     if log_files:
@@ -279,16 +205,23 @@ def _get_run_meta(run_dir: str) -> dict:
             with open(log_files[0], "r") as f:
                 header_lines = f.readlines()[:30]
             for line in header_lines:
-                if "model" in line.lower() and ":" in line:
-                    val = line.split(":", 1)[1].strip()
-                    if val and len(val) < 40:
-                        meta["model"] = val
-                if "dataset" in line.lower() and ":" in line:
-                    val = line.split(":", 1)[1].strip()
-                    if val and len(val) < 60:
-                        meta["dataset"] = val
-                if "epoch" in line.lower() and "/" in line:
-                    match = re.search(r"(\d+)/(\d+)", line)
+                line_clean = line.strip()
+                # Skip timestamp prefixed lines for model extraction
+                if "Model Size" in line_clean or "model_arch" in line_clean:
+                    # Extract value after last colon
+                    parts = line_clean.rsplit(":", 1)
+                    if len(parts) == 2:
+                        val = parts[1].strip()
+                        if val and len(val) < 30 and not val.startswith("["):
+                            meta["model"] = val
+                if "dataset" in line_clean.lower() and "path" not in line_clean.lower():
+                    parts = line_clean.rsplit(":", 1)
+                    if len(parts) == 2:
+                        val = parts[1].strip()
+                        if val and len(val) < 40 and not val.startswith("["):
+                            meta["dataset"] = val
+                if "epoch" in line_clean.lower() and "/" in line_clean:
+                    match = re.search(r"(\d+)/(\d+)", line_clean)
                     if match:
                         meta["epochs"] = match.group(2)
         except OSError:
@@ -340,13 +273,10 @@ def _render_run_dashboard(run_dir: str):
     log_file = _find_log_file(run_dir)
     history = _parse_training_log(log_file) if log_file else None
 
-    # Top metrics row
     _render_metrics_from_history(history, run_dir)
 
-    # Main content in tabs
     tab_curves, tab_viz, tab_gt, tab_log, tab_files = st.tabs([
-        "📈 Training Curves", "🖼️ Visualizations", "✅ GT Verification",
-        "📜 Full Log", "📁 Checkpoints"
+        "Curves", "Visualizations", "Ground Truth", "Log", "Files"
     ])
 
     with tab_curves:
@@ -502,18 +432,16 @@ def _render_curves(history, run_dir):
     map_curve_img = os.path.join(plots_dir, "mAP_curve.png")
 
     if os.path.isfile(training_curves_img):
-        st.markdown("#### Saved Training Curves (matplotlib)")
-        st.image(training_curves_img, caption="training_curves.png")
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            st.image(training_curves_img, use_container_width=True)
         if os.path.isfile(map_curve_img):
-            st.image(map_curve_img, caption="mAP_curve.png")
-        st.divider()
+            with cc2:
+                st.image(map_curve_img, use_container_width=True)
 
-    # Interactive plotly charts from parsed log
     if not history or not history["train_loss"]:
-        st.info("No training data parsed yet. Training may still be starting.")
+        st.info("No data yet.")
         return
-
-    st.markdown("#### Interactive Charts (parsed from log)")
 
     losses = [x for x in history["train_loss"] if x is not None]
     epochs_for_loss = [i + 1 for i, x in enumerate(history["train_loss"]) if x is not None]
@@ -583,103 +511,71 @@ def _render_curves(history, run_dir):
 
     fig.update_layout(
         template="plotly_white",
-        height=500,
-        margin=dict(l=40, r=20, t=40, b=40),
+        height=350,
+        margin=dict(l=30, r=10, t=30, b=25),
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.05),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=10)),
     )
     st.plotly_chart(fig, use_container_width=True)
 
 
 def _render_visualizations(run_dir):
-    """Show per-epoch GT vs Prediction visualizations."""
+    """Compact visualization grid."""
     vis_dir = os.path.join(run_dir, "visualizations")
-
     if not os.path.isdir(vis_dir):
-        st.info("No visualizations directory found. Training may not have generated any yet.")
+        st.info("No visualizations yet.")
         return
 
-    images = sorted([
-        f for f in os.listdir(vis_dir)
-        if f.endswith(".jpg") and f != "latest_visualization.jpg"
-    ])
-
+    images = sorted([f for f in os.listdir(vis_dir) if f.endswith(".jpg") and f != "latest_visualization.jpg"])
     if not images:
-        st.info("No visualization images found yet.")
+        st.info("No images yet.")
         return
 
-    st.markdown(f"**{len(images)} epoch visualizations** (GT vs Predictions)")
-
-    # Show latest first
     latest = os.path.join(vis_dir, "latest_visualization.jpg")
     if os.path.isfile(latest):
-        st.markdown("#### Latest Visualization")
-        st.image(latest, caption="Latest (GT left | Predictions right)")
+        st.image(latest, caption="Latest", use_container_width=True)
 
-    st.divider()
-    st.markdown("#### All Epoch Visualizations")
-
-    # Display in a grid (2 per row)
-    for i in range(0, len(images), 2):
-        cols = st.columns(2)
-        for j, col in enumerate(cols):
-            idx = i + j
-            if idx < len(images):
-                img_path = os.path.join(vis_dir, images[idx])
-                with col:
-                    st.image(img_path, caption=images[idx], use_container_width=True)
+    with st.expander(f"All Epochs ({len(images)})", expanded=False):
+        for i in range(0, len(images), 3):
+            cols = st.columns(3)
+            for j, col in enumerate(cols):
+                idx = i + j
+                if idx < len(images):
+                    with col:
+                        st.image(os.path.join(vis_dir, images[idx]), caption=images[idx][:20], use_container_width=True)
 
 
 def _render_gt_verification(run_dir):
-    """Show GT verification images and report."""
+    """Compact GT verification."""
     gt_dir = os.path.join(run_dir, "gt_verification")
-
     if not os.path.isdir(gt_dir):
-        st.info("No GT verification data found.")
+        st.info("No GT verification data.")
         return
 
-    # Summary
-    summary_path = os.path.join(gt_dir, "verification_summary.txt")
-    if os.path.isfile(summary_path):
-        with open(summary_path) as f:
-            st.code(f.read(), language="text")
-
-    # Report JSON highlights
     report_path = os.path.join(gt_dir, "verification_report.json")
     if os.path.isfile(report_path):
         with open(report_path) as f:
             report = json.load(f)
+        st.success("PASSED") if report.get("passed") else st.error("FAILED")
+        tc = report.get("splits", {}).get("train", {}).get("coco", {})
+        vc = report.get("splits", {}).get("val", {}).get("coco", {})
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("Train Imgs", tc.get("num_images", 0))
+        with m2:
+            st.metric("Train Ann", tc.get("num_annotations", 0))
+        with m3:
+            st.metric("Val Imgs", vc.get("num_images", 0))
+        with m4:
+            st.metric("Val Ann", vc.get("num_annotations", 0))
 
-        passed = report.get("passed", False)
-        if passed:
-            st.success("Annotation verification: PASSED")
-        else:
-            st.error("Annotation verification: FAILED")
-
-        cols = st.columns(4)
-        train_coco = report.get("splits", {}).get("train", {}).get("coco", {})
-        val_coco = report.get("splits", {}).get("val", {}).get("coco", {})
-        with cols[0]:
-            st.metric("Train Images", train_coco.get("num_images", 0))
-        with cols[1]:
-            st.metric("Train Annotations", train_coco.get("num_annotations", 0))
-        with cols[2]:
-            st.metric("Val Images", val_coco.get("num_images", 0))
-        with cols[3]:
-            st.metric("Val Annotations", val_coco.get("num_annotations", 0))
-
-    # GT Images
-    st.divider()
     raw_dir = os.path.join(gt_dir, "images", "raw")
     dl_dir = os.path.join(gt_dir, "images", "dataloader")
-
-    gt_tab_raw, gt_tab_dl = st.tabs(["Raw GT Images", "Dataloader GT Images"])
-
+    gt_tab_raw, gt_tab_dl = st.tabs(["Raw GT", "Dataloader GT"])
     with gt_tab_raw:
-        _render_image_grid(raw_dir, "Raw ground truth with bounding boxes")
-
+        _render_image_grid(raw_dir, "Raw GT")
     with gt_tab_dl:
-        _render_image_grid(dl_dir, "After dataloader transforms (letterbox, normalize)")
+        _render_image_grid(dl_dir, "After transforms")
 
 
 def _render_image_grid(img_dir, description):
@@ -706,67 +602,50 @@ def _render_image_grid(img_dir, description):
 
 
 def _render_full_log(log_path):
-    """Show full training log file."""
+    """Compact log viewer."""
     if not log_path or not os.path.isfile(log_path):
-        st.info("No training log found.")
+        st.info("No log found.")
         return
 
     with open(log_path) as f:
         content = f.read()
-
-    st.markdown(f"**Log file:** `{os.path.basename(log_path)}`")
-
-    # Show last 100 lines by default, with option to expand
     lines = content.strip().split("\n")
-    show_all = st.checkbox("Show full log", value=False, key="show_full_log")
-
-    if show_all:
-        st.code(content, language="bash")
-    else:
-        st.code("\n".join(lines[-50:]), language="bash")
-        if len(lines) > 50:
-            st.caption(f"Showing last 50 of {len(lines)} lines. Check 'Show full log' to see all.")
+    lc1, lc2 = st.columns([4, 1])
+    with lc1:
+        st.caption(f"`{os.path.basename(log_path)}` — {len(lines)} lines")
+    with lc2:
+        show_all = st.checkbox("Full", value=False, key="show_full_log")
+    st.code("\n".join(lines if show_all else lines[-30:]), language="bash")
 
 
 def _render_checkpoints(run_dir):
-    """Show checkpoint files and their sizes."""
-    st.markdown("#### Saved Checkpoints & Weights")
-
+    """Compact checkpoints list."""
     files_info = []
     for f in sorted(os.listdir(run_dir)):
         fpath = os.path.join(run_dir, f)
         if os.path.isfile(fpath) and f.endswith((".pth", ".json", ".csv", ".log")):
             size = os.path.getsize(fpath)
-            if size > 1024 * 1024:
-                size_str = f"{size / (1024*1024):.1f} MB"
-            elif size > 1024:
-                size_str = f"{size / 1024:.1f} KB"
-            else:
-                size_str = f"{size} B"
+            size_str = f"{size / (1024*1024):.1f}MB" if size > 1048576 else f"{size / 1024:.0f}KB"
             files_info.append({"File": f, "Size": size_str, "Type": _file_type(f)})
 
     if files_info:
-        st.dataframe(files_info, use_container_width=True, hide_index=True)
+        st.dataframe(files_info, use_container_width=True, hide_index=True, height=200)
     else:
-        st.info("No checkpoint files found.")
+        st.info("No files.")
 
-    # results.json
     results_path = os.path.join(run_dir, "results.json")
     if os.path.isfile(results_path):
-        st.divider()
-        st.markdown("#### Training Results Summary")
         with open(results_path) as f:
             results = json.load(f)
-
-        cols = st.columns(4)
-        with cols[0]:
-            st.metric("Epochs Trained", results.get("epochs_trained", "?"))
-        with cols[1]:
-            st.metric("Best mAP@0.5", f"{results.get('best_mAP50', 0):.4f}")
-        with cols[2]:
-            st.metric("Best Val Loss", f"{results.get('best_val_loss', 0):.4f}")
-        with cols[3]:
-            st.metric("Model Params", f"{results.get('model_params_M', 0):.2f}M")
+        r1, r2, r3, r4 = st.columns(4)
+        with r1:
+            st.metric("Epochs", results.get("epochs_trained", "?"))
+        with r2:
+            st.metric("Best mAP", f"{results.get('best_mAP50', 0):.4f}")
+        with r3:
+            st.metric("Val Loss", f"{results.get('best_val_loss', 0):.4f}")
+        with r4:
+            st.metric("Params", f"{results.get('model_params_M', 0):.2f}M")
 
 
 def _file_type(filename):
@@ -791,10 +670,9 @@ def _file_type(filename):
 # ---- Start New Training Tab ----
 
 def _render_start_tab():
-    """Tab: start a new training run with full configuration."""
-    st.markdown("### Start New Training")
+    """Tab: launch a new training run — professional step-based layout."""
 
-    # ─── Workflow Folder Manager ───
+    # ─── STEP 1: Experiment Folder ───
     from flashstudio.components.project_manager import get_active_project, get_project_dir
     active_proj = get_active_project()
     if active_proj:
@@ -805,552 +683,253 @@ def _render_start_tab():
 
     os.makedirs(runs_root, exist_ok=True)
 
-    with st.container(border=True):
-        st.markdown("### 📁 Workflow Folder Manager")
-        st.caption(f"Root: `{runs_root}` — Each experiment gets its own folder for logs, checkpoints & images.")
+    existing_folders = sorted(
+        [d for d in os.listdir(runs_root) if os.path.isdir(os.path.join(runs_root, d))],
+        key=lambda d: os.path.getmtime(os.path.join(runs_root, d)),
+        reverse=True,
+    )
 
-        # ─── Create New Folder (always visible at top) ───
-        create_col1, create_col2 = st.columns([3, 1])
-        with create_col1:
+    with st.container(border=True):
+        st.markdown("#### 1. Experiment")
+        nc1, nc2, nc3 = st.columns([3, 3, 1])
+        with nc1:
             default_name = _generate_run_name()
-            new_folder_name = st.text_input(
-                "New folder name",
-                value=st.session_state.get("run_name", default_name),
-                key="new_workflow_folder_name",
-                placeholder="e.g. pico_coco_v1, nano_custom_aug",
-            )
-        with create_col2:
-            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-            if st.button("➕ Create", key="btn_create_workflow_folder", use_container_width=True, type="primary"):
+            new_folder_name = st.text_input("New", value=st.session_state.get("run_name", default_name),
+                                            key="new_workflow_folder_name", label_visibility="collapsed")
+        with nc3:
+            if st.button("Create", key="btn_create_wf", use_container_width=True, type="primary"):
                 folder_path = os.path.join(runs_root, new_folder_name)
-                if os.path.exists(folder_path):
-                    st.warning(f"Folder `{new_folder_name}` already exists!")
-                else:
+                if not os.path.exists(folder_path):
                     os.makedirs(folder_path, exist_ok=True)
                     st.session_state["run_name"] = new_folder_name
                     st.session_state["active_workflow_folder"] = new_folder_name
-                    st.success(f"Created: `{new_folder_name}`")
                     st.rerun()
 
-        st.divider()
-
-        # ─── Existing Folders List (always visible) ───
-        existing_folders = sorted(
-            [d for d in os.listdir(runs_root) if os.path.isdir(os.path.join(runs_root, d))],
-            key=lambda d: os.path.getmtime(os.path.join(runs_root, d)),
-            reverse=True,
-        )
-
-        st.markdown(f"**Existing Folders** ({len(existing_folders)})")
-
-        if not existing_folders:
-            st.info("No workflow folders yet. Create one above to get started.")
-        else:
-            # Show each folder as a row with info + action buttons
-            active_folder = st.session_state.get("active_workflow_folder", "")
-
-            for idx, folder_name in enumerate(existing_folders):
-                folder_path = os.path.join(runs_root, folder_name)
-                size = _get_folder_size_str(folder_path)
-                n_files = sum(1 for _ in os.scandir(folder_path) if _.is_file())
-
-                is_active = (folder_name == active_folder)
-                prefix = "▶️" if is_active else "📁"
-
-                row_c1, row_c2, row_c3, row_c4, row_c5 = st.columns([3, 1, 1, 1, 1])
-
-                with row_c1:
-                    st.markdown(f"{prefix} **{folder_name}**{'  ← active' if is_active else ''}")
-                    st.caption(f"{size} · {n_files} files")
-
-                with row_c2:
-                    if st.button("✅ Use", key=f"use_folder_{idx}", use_container_width=True):
-                        st.session_state["active_workflow_folder"] = folder_name
-                        st.session_state["run_name"] = folder_name
+        with nc2:
+            if existing_folders:
+                active_folder = st.session_state.get("active_workflow_folder", "")
+                folder_labels = [f"{f} ({_get_folder_size_str(os.path.join(runs_root, f))})"
+                                 + (" ←" if f == active_folder else "") for f in existing_folders]
+                sel_idx = st.selectbox("Existing", range(len(existing_folders)),
+                                       format_func=lambda i: folder_labels[i], key="sel_existing_wf",
+                                       label_visibility="collapsed")
+                bc1, bc2, bc3 = st.columns(3)
+                with bc1:
+                    if st.button("Use", key="btn_use_wf", help="Use this folder", use_container_width=True):
+                        st.session_state["active_workflow_folder"] = existing_folders[sel_idx]
+                        st.session_state["run_name"] = existing_folders[sel_idx]
                         st.rerun()
+                with bc2:
+                    if st.button("Rename", key="btn_rename_wf", help="Rename folder", use_container_width=True):
+                        st.session_state["wf_rename_target"] = existing_folders[sel_idx]
+                with bc3:
+                    if st.button("Delete", key="btn_del_wf", help="Delete folder", use_container_width=True):
+                        st.session_state["wf_delete_target"] = existing_folders[sel_idx]
 
-                with row_c3:
-                    if st.button("✏️", key=f"rename_folder_{idx}", use_container_width=True,
-                                 help="Rename"):
-                        st.session_state["wf_rename_target"] = folder_name
+        _render_folder_dialogs(runs_root, existing_folders)
 
-                with row_c4:
-                    if st.button("🗑️", key=f"delete_folder_{idx}", use_container_width=True,
-                                 help="Delete"):
-                        st.session_state["wf_delete_target"] = folder_name
-
-                with row_c5:
-                    if st.button("📂", key=f"open_folder_{idx}", use_container_width=True,
-                                 help="View contents"):
-                        st.session_state["wf_view_target"] = folder_name
-
-            # ─── Bulk action: Delete ALL ───
-            st.divider()
-            del_all_c1, del_all_c2 = st.columns([3, 1])
-            with del_all_c2:
-                if st.button("🧹 Delete ALL Folders", key="btn_delete_all_wf", use_container_width=True):
-                    st.session_state["show_delete_all_wf_folders"] = True
-
-        # ─── Rename Dialog (visible when triggered) ───
-        if st.session_state.get("wf_rename_target"):
-            target = st.session_state["wf_rename_target"]
-            with st.container(border=True):
-                st.markdown(f"#### ✏️ Rename `{target}`")
-                rename_val = st.text_input("New name", value=target, key="rename_wf_input")
-                rc1, rc2 = st.columns(2)
-                with rc1:
-                    if st.button("Rename", type="primary", key="do_rename_wf"):
-                        if rename_val and rename_val != target:
-                            old_path = os.path.join(runs_root, target)
-                            new_path = os.path.join(runs_root, rename_val)
-                            if os.path.exists(new_path):
-                                st.error(f"`{rename_val}` already exists.")
-                            else:
-                                os.rename(old_path, new_path)
-                                if st.session_state.get("active_workflow_folder") == target:
-                                    st.session_state["active_workflow_folder"] = rename_val
-                                    st.session_state["run_name"] = rename_val
-                                st.session_state.pop("wf_rename_target", None)
-                                st.rerun()
-                with rc2:
-                    if st.button("Cancel", key="cancel_rename_wf"):
-                        st.session_state.pop("wf_rename_target", None)
-                        st.rerun()
-
-        # ─── Delete Single Folder Dialog (visible when triggered) ───
-        if st.session_state.get("wf_delete_target"):
-            target = st.session_state["wf_delete_target"]
-            with st.container(border=True):
-                st.error(f"⚠️ Delete **{target}** and ALL its contents (logs, checkpoints, images)?")
-                dc1, dc2 = st.columns(2)
-                with dc1:
-                    if st.button("Yes, Delete", type="primary", key="confirm_delete_wf"):
-                        import shutil
-                        shutil.rmtree(os.path.join(runs_root, target), ignore_errors=True)
-                        if st.session_state.get("active_workflow_folder") == target:
-                            st.session_state.pop("active_workflow_folder", None)
-                        st.session_state.pop("wf_delete_target", None)
-                        st.success(f"Deleted `{target}`")
-                        st.rerun()
-                with dc2:
-                    if st.button("Cancel", key="cancel_delete_wf"):
-                        st.session_state.pop("wf_delete_target", None)
-                        st.rerun()
-
-        # ─── Delete ALL Dialog (visible when triggered) ───
-        if st.session_state.get("show_delete_all_wf_folders"):
-            with st.container(border=True):
-                st.error(f"⚠️ Delete ALL **{len(existing_folders)}** workflow folders? This is permanent!")
-                dc1, dc2 = st.columns(2)
-                with dc1:
-                    if st.button("DELETE ALL", type="primary", key="confirm_delete_all_wf"):
-                        import shutil
-                        for f in existing_folders:
-                            shutil.rmtree(os.path.join(runs_root, f), ignore_errors=True)
-                        st.session_state.pop("active_workflow_folder", None)
-                        st.session_state.pop("show_delete_all_wf_folders", None)
-                        st.success("All workflow folders deleted.")
-                        st.rerun()
-                with dc2:
-                    if st.button("Cancel", key="cancel_delete_all_wf"):
-                        st.session_state.pop("show_delete_all_wf_folders", None)
-                        st.rerun()
-
-        # ─── View Folder Contents (visible when triggered) ───
-        if st.session_state.get("wf_view_target"):
-            target = st.session_state["wf_view_target"]
-            target_path = os.path.join(runs_root, target)
-            with st.container(border=True):
-                st.markdown(f"#### 📂 Contents of `{target}`")
-                if os.path.isdir(target_path):
-                    contents = sorted(os.listdir(target_path))
-                    if contents:
-                        file_data = []
-                        for f in contents:
-                            fp = os.path.join(target_path, f)
-                            if os.path.isfile(fp):
-                                sz = os.path.getsize(fp)
-                                if sz > 1_048_576:
-                                    sz_str = f"{sz / 1_048_576:.1f} MB"
-                                elif sz > 1024:
-                                    sz_str = f"{sz / 1024:.0f} KB"
-                                else:
-                                    sz_str = f"{sz} B"
-                                file_data.append({"File": f, "Size": sz_str})
-                            else:
-                                file_data.append({"File": f + "/", "Size": "DIR"})
-                        st.dataframe(file_data, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("Folder is empty.")
-                if st.button("Close", key="close_view_wf"):
-                    st.session_state.pop("wf_view_target", None)
-                    st.rerun()
-
-    # Determine final run path from active folder
+    # Determine active path
     active_folder = st.session_state.get("active_workflow_folder", "")
     if not active_folder and existing_folders:
         active_folder = existing_folders[0]
         st.session_state["active_workflow_folder"] = active_folder
     run_name = active_folder or st.session_state.get("run_name", "untitled_run")
     st.session_state["run_name"] = run_name
-    save_dir = runs_root
-    st.session_state["save_dir"] = save_dir
-    full_run_path = os.path.join(save_dir, run_name)
+    st.session_state["save_dir"] = runs_root
+    full_run_path = os.path.join(runs_root, run_name)
 
-    # ─── Config Summary ───
+    # Config overview — single row
     with st.container(border=True):
-        st.markdown("**Training Summary**")
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            arch = st.session_state.get("model_arch", "FlashDet-Pico")
-            st.metric("Model", arch.replace("FlashDet-", "FD-"))
-        with col2:
-            dataset = st.session_state.get("dataset_name", "Not selected")
-            st.metric("Dataset", dataset[:15] if dataset else "—")
-        with col3:
+        st.markdown("#### 2. Config")
+        cc1, cc2, cc3, cc4, cc5, cc6, cc7, cc8 = st.columns(8)
+        with cc1:
+            st.metric("Model", st.session_state.get("model_arch", "Pico").replace("FlashDet-", ""))
+        with cc2:
+            st.metric("Dataset", (st.session_state.get("dataset_name") or "—")[:8])
+        with cc3:
             st.metric("Epochs", st.session_state.get("epochs", 100))
-        with col4:
-            st.metric("Batch Size", st.session_state.get("batch_size", 16))
-        with col5:
+        with cc4:
+            st.metric("Batch", st.session_state.get("batch_size", 16))
+        with cc5:
             st.metric("LR", f"{st.session_state.get('lr', 0.001):.1e}")
+        with cc6:
+            st.metric("Img", f"{st.session_state.get('img_size', 320)}")
+        with cc7:
+            st.metric("Device", "GPU" if has_cuda() else "CPU")
+        with cc8:
+            st.metric("Output", run_name[:8])
 
-        col_a, col_b, col_c, col_d = st.columns(4)
-        with col_a:
-            st.metric("Image Size", st.session_state.get("img_size", 320))
-        with col_b:
-            strategy = st.session_state.get("finetune_strategy", "Full fine-tune")
-            st.metric("Strategy", strategy[:12])
-        with col_c:
-            device = "GPU" if _has_cuda() else "CPU"
-            st.metric("Device", device)
-        with col_d:
-            train_path = st.session_state.get("train_img_path", "")
-            status = "✅ Ready" if train_path and os.path.isdir(train_path) else "❌ Missing"
-            st.metric("Data", status)
-
-    # ─── Pre-flight Checks ───
+    # Pre-flight + Launch — single row
     with st.container(border=True):
-        st.markdown("**Pre-flight Checks**")
+        st.markdown("#### 3. Launch")
         checks = _run_preflight_checks()
-        cols = st.columns(len(checks))
         all_ok = True
-        for i, (label, ok, msg) in enumerate(checks):
-            with cols[i]:
-                icon = "✅" if ok else "❌"
-                st.markdown(f"{icon} **{label}**")
-                if not ok:
-                    st.caption(msg)
-                    all_ok = False
+        check_html = []
+        for label, ok, msg in checks:
+            status = "OK" if ok else "Failed"
+            check_html.append(f'{label}: {status}')
+            if not ok:
+                all_ok = False
+        st.markdown(
+            f'<div class="ds-card-stats">' + ' '.join(f'<span>{c}</span>' for c in check_html) + '</div>',
+            unsafe_allow_html=True,
+        )
 
-    # ─── Action Buttons ───
-    col_start, col_clean, col_resume, col_config = st.columns(4)
+        b1, b2, b3, b4 = st.columns(4)
+        with b1:
+            if not st.session_state.get("training_active"):
+                if st.button("Start", use_container_width=True, type="primary",
+                             key="btn_start_training", disabled=not all_ok):
+                    st.session_state.update({"training_active": True, "training_status": "Running",
+                                             "training_paused": False, "save_dir": full_run_path})
+                    _start_training()
+            else:
+                if st.button("Stop", use_container_width=True, key="btn_stop_training"):
+                    _stop_training()
+        with b2:
+            if st.session_state.get("training_active"):
+                if st.session_state.get("training_paused"):
+                    if st.button("Resume", use_container_width=True, key="btn_resume_active"):
+                        _resume_active_training()
+                else:
+                    if st.button("Pause", use_container_width=True, key="btn_pause_training"):
+                        _pause_training()
+            else:
+                st.button("Pause", use_container_width=True, key="btn_pause_disabled", disabled=True)
+        with b3:
+            if st.button("Resume Ckpt", use_container_width=True, key="btn_resume_training", help="Resume from checkpoint"):
+                st.session_state["show_resume_dialog"] = True
+        with b4:
+            if st.button("Clean", use_container_width=True, key="btn_clean_workspace"):
+                st.session_state["show_clean_dialog"] = True
 
-    with col_start:
-        if not st.session_state.get("training_active", False):
-            start_disabled = not all_ok
-            if st.button("▶️ Start Training", use_container_width=True, type="primary",
-                         key="btn_start_training", disabled=start_disabled):
-                st.session_state["training_active"] = True
-                st.session_state["training_status"] = "Running"
-                # Update save_dir to include run name
-                st.session_state["save_dir"] = full_run_path
-                _start_training()
-        else:
-            if st.button("⏹️ Stop Training", use_container_width=True, type="secondary",
-                         key="btn_stop_training"):
-                _stop_training()
-
-    with col_clean:
-        if st.button("🧹 Clean Workspace", use_container_width=True, key="btn_clean_workspace"):
-            st.session_state["show_clean_dialog"] = True
-
-    with col_resume:
-        if st.button("🔄 Resume Training", use_container_width=True, key="btn_resume_training"):
-            st.session_state["show_resume_dialog"] = True
-
-    with col_config:
-        if st.button("📄 Save/Load Config", use_container_width=True, key="btn_config_file"):
-            st.session_state["show_config_dialog"] = not st.session_state.get("show_config_dialog", False)
-
-    # ─── Status ───
-    if st.session_state.get("training_active"):
-        st.info("Training is running... Switch to **Monitor Run** tab and select latest run to see progress.")
-
-    # ─── Config File Dialog ───
-    if st.session_state.get("show_config_dialog"):
-        _render_config_file_dialog(full_run_path)
-
-    # ─── Clean Workspace Dialog ───
     if st.session_state.get("show_clean_dialog"):
         _render_clean_workspace_dialog()
 
-    # ─── Resume Dialog ───
     if st.session_state.get("show_resume_dialog"):
         _render_resume_dialog()
 
 
-def _render_config_file_dialog(run_path: str):
-    """Save/load training configuration as YAML file."""
-    st.divider()
-    with st.container(border=True):
-        st.markdown("### 📄 Training Config File")
-        st.caption("Save your workflow as a config file to reproduce or share training runs.")
+def _render_folder_dialogs(runs_root: str, existing_folders: list):
+    """Render rename/delete dialogs for folder management."""
+    import shutil
 
-        tab_save, tab_load = st.tabs(["💾 Save Config", "📂 Load Config"])
+    if st.session_state.get("wf_rename_target"):
+        target = st.session_state["wf_rename_target"]
+        with st.container(border=True):
+            rename_val = st.text_input("New name", value=target, key="rename_wf_input")
+            rc1, rc2 = st.columns(2)
+            with rc1:
+                if st.button("Rename", type="primary", key="do_rename_wf"):
+                    if rename_val and rename_val != target:
+                        old_path = os.path.join(runs_root, target)
+                        new_path = os.path.join(runs_root, rename_val)
+                        if os.path.exists(new_path):
+                            st.error(f"`{rename_val}` already exists.")
+                        else:
+                            os.rename(old_path, new_path)
+                            if st.session_state.get("active_workflow_folder") == target:
+                                st.session_state["active_workflow_folder"] = rename_val
+                                st.session_state["run_name"] = rename_val
+                            st.session_state.pop("wf_rename_target", None)
+                            st.rerun()
+            with rc2:
+                if st.button("Cancel", key="cancel_rename_wf"):
+                    st.session_state.pop("wf_rename_target", None)
+                    st.rerun()
 
-        with tab_save:
-            config = _build_config_dict()
+    if st.session_state.get("wf_delete_target"):
+        target = st.session_state["wf_delete_target"]
+        with st.container(border=True):
+            st.error(f"Delete **{target}** and all contents?")
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                if st.button("Delete", type="primary", key="confirm_delete_wf"):
+                    shutil.rmtree(os.path.join(runs_root, target), ignore_errors=True)
+                    if st.session_state.get("active_workflow_folder") == target:
+                        st.session_state.pop("active_workflow_folder", None)
+                    st.session_state.pop("wf_delete_target", None)
+                    st.rerun()
+            with dc2:
+                if st.button("Cancel", key="cancel_delete_wf"):
+                    st.session_state.pop("wf_delete_target", None)
+                    st.rerun()
 
-            # Show YAML preview
-            yaml_str = yaml.dump(config, default_flow_style=False, sort_keys=False)
-            st.code(yaml_str, language="yaml")
-
-            col_dl, col_save = st.columns(2)
-            with col_dl:
-                st.download_button(
-                    "📥 Download config.yaml",
-                    yaml_str,
-                    file_name="flashstudio_config.yaml",
-                    mime="text/yaml",
-                    use_container_width=True,
-                    type="primary",
-                )
-            with col_save:
-                if st.button("💾 Save to Run Folder", use_container_width=True, key="save_config_to_run"):
-                    os.makedirs(run_path, exist_ok=True)
-                    config_path = os.path.join(run_path, "config.yaml")
-                    with open(config_path, "w") as f:
-                        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-                    st.success(f"Config saved to `{config_path}`")
-
-        with tab_load:
-            st.markdown("Load a previously saved config to restore all settings.")
-
-            load_method = st.radio(
-                "Load from",
-                ["Upload file", "Enter path", "Select from runs"],
-                key="config_load_method",
-                horizontal=True,
-            )
-
-            config_to_load = None
-
-            if load_method == "Upload file":
-                uploaded = st.file_uploader(
-                    "Upload config.yaml",
-                    type=["yaml", "yml", "json"],
-                    key="config_file_upload",
-                )
-                if uploaded:
-                    content = uploaded.read().decode("utf-8")
-                    try:
-                        config_to_load = yaml.safe_load(content)
-                        st.success(f"Loaded: {uploaded.name}")
-                    except Exception as e:
-                        st.error(f"Failed to parse: {e}")
-
-            elif load_method == "Enter path":
-                config_path = st.text_input(
-                    "Config file path",
-                    placeholder="/path/to/config.yaml",
-                    key="config_path_input",
-                )
-                if config_path and os.path.isfile(config_path):
-                    with open(config_path) as f:
-                        try:
-                            config_to_load = yaml.safe_load(f.read())
-                            st.success(f"Loaded from: `{config_path}`")
-                        except Exception as e:
-                            st.error(f"Failed to parse: {e}")
-
-            else:
-                # Find configs from existing runs
-                save_dir = st.session_state.get("save_dir", "")
-                parent = os.path.dirname(save_dir) if save_dir else ""
-                found_configs = []
-                if parent and os.path.isdir(parent):
-                    for d in os.listdir(parent):
-                        cfg_path = os.path.join(parent, d, "config.yaml")
-                        if os.path.isfile(cfg_path):
-                            found_configs.append((d, cfg_path))
-
-                if found_configs:
-                    selected = st.selectbox(
-                        "Select config from run",
-                        range(len(found_configs)),
-                        format_func=lambda i: found_configs[i][0],
-                        key="config_from_run_select",
-                    )
-                    cfg_path = found_configs[selected][1]
-                    with open(cfg_path) as f:
-                        config_to_load = yaml.safe_load(f.read())
-                    st.success(f"Loaded config from run: `{found_configs[selected][0]}`")
-                else:
-                    st.info("No saved configs found in workspace runs.")
-
-            if config_to_load:
-                st.divider()
-                st.markdown("**Preview:**")
-                st.json(config_to_load)
-
-                if st.button("✅ Apply Config", type="primary", key="apply_loaded_config",
-                             use_container_width=True):
-                    _apply_config_dict(config_to_load)
-                    st.success("Config applied! All settings updated.")
+    if st.session_state.get("show_delete_all_wf_folders"):
+        with st.container(border=True):
+            st.error(f"Delete ALL {len(existing_folders)} folders? This is permanent!")
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                if st.button("DELETE ALL", type="primary", key="confirm_delete_all_wf"):
+                    for f in existing_folders:
+                        shutil.rmtree(os.path.join(runs_root, f), ignore_errors=True)
+                    st.session_state.pop("active_workflow_folder", None)
+                    st.session_state.pop("show_delete_all_wf_folders", None)
+                    st.rerun()
+            with dc2:
+                if st.button("Cancel", key="cancel_delete_all_wf"):
+                    st.session_state.pop("show_delete_all_wf_folders", None)
                     st.rerun()
 
 
-def _build_config_dict() -> dict:
-    """Build a complete training config dictionary from current session state."""
-    config = {
-        "project": {
-            "name": st.session_state.get("run_name", "untitled"),
-            "description": "",
-        },
-        "dataset": {
-            "name": st.session_state.get("dataset_name", ""),
-            "train_images": st.session_state.get("train_img_path", ""),
-            "val_images": st.session_state.get("val_img_path", ""),
-            "format": st.session_state.get("ann_format", "COCO JSON"),
-            "num_classes": st.session_state.get("upload_num_classes", 80),
-            "class_names": st.session_state.get("class_names", ""),
-        },
-        "model": {
-            "architecture": st.session_state.get("arch_family", "FlashDet (recommended)"),
-            "model_size": st.session_state.get("model_arch", "FlashDet-Pico"),
-            "backbone_type": "pico_v2" if "PicoBackbone" in st.session_state.get("pico_backbone", "") else "lite",
-            "pretrained": st.session_state.get("pretrain_option", "COCO pretrained (recommended)"),
-            "custom_weights": st.session_state.get("custom_weights", ""),
-        },
-        "training": {
-            "epochs": st.session_state.get("epochs", 100),
-            "batch_size": st.session_state.get("batch_size", 16),
-            "learning_rate": st.session_state.get("lr", 0.001),
-            "image_size": st.session_state.get("img_size", 320),
-            "warmup_epochs": st.session_state.get("warmup_epochs", 3),
-            "patience": st.session_state.get("patience", 50),
-            "grad_accum": st.session_state.get("grad_accum", 1),
-            "num_workers": st.session_state.get("num_workers", 4),
-        },
-        "optimizer": {
-            "name": st.session_state.get("optimizer", "AdamW"),
-            "weight_decay": st.session_state.get("weight_decay", 0.05),
-            "use_8bit": st.session_state.get("use_8bit_optimizer", False),
-        },
-        "augmentation": {
-            "mosaic": st.session_state.get("aug_mosaic", True),
-            "mixup": st.session_state.get("aug_mixup", False),
-            "copy_paste": st.session_state.get("aug_copypaste", False),
-        },
-        "finetune": {
-            "strategy": st.session_state.get("finetune_strategy", "Full fine-tune (all layers trainable)"),
-            "lora": st.session_state.get("finetune_strategy", "").startswith("LoRA"),
-            "lora_variant": st.session_state.get("lora_variant", "standard"),
-            "lora_rank": st.session_state.get("lora_rank", 16),
-            "lora_alpha": st.session_state.get("lora_alpha", 32),
-            "lora_dropout": st.session_state.get("lora_dropout", 0.0),
-            "lora_targets": st.session_state.get("lora_targets", ["backbone", "fpn"]),
-            "qlora": st.session_state.get("qlora", False),
-            "qlora_dtype": st.session_state.get("qlora_dtype", "int8"),
-        },
-        "advanced": {
-            "amp": st.session_state.get("amp", True),
-            "compile": st.session_state.get("compile_model", False),
-            "multi_gpu": st.session_state.get("ddp", False),
-            "activation_checkpointing": st.session_state.get("activation_checkpointing", False),
-            "activation_offloading": st.session_state.get("activation_offloading", False),
-            "optimizer_in_bwd": st.session_state.get("optimizer_in_bwd", False),
-            "chunked_loss": st.session_state.get("chunked_loss", False),
-            "chunk_size": st.session_state.get("chunk_size", 1024),
-        },
-        "output": {
-            "save_dir": st.session_state.get("save_dir", ""),
-        },
-    }
-    return config
+def _render_config_file_dialog(run_path: str):
+    """Compact save/load config dialog."""
+    with st.container(border=True):
+        tab_save, tab_load = st.tabs(["Save", "Load"])
+        with tab_save:
+            config = _build_config_dict()
+            yaml_str = yaml.dump(config, default_flow_style=False, sort_keys=False)
+            with st.expander("YAML Preview"):
+                st.code(yaml_str, language="yaml")
+            sc1, sc2 = st.columns(2)
+            with sc1:
+                st.download_button("Download", yaml_str, file_name="config.yaml", mime="text/yaml",
+                                   use_container_width=True, type="primary")
+            with sc2:
+                if st.button("Save to Run", use_container_width=True, key="save_config_to_run"):
+                    os.makedirs(run_path, exist_ok=True)
+                    with open(os.path.join(run_path, "config.yaml"), "w") as f:
+                        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                    st.success("Saved")
+        with tab_load:
+            load_method = st.radio("From", ["Upload", "Path", "Runs"], key="config_load_method", horizontal=True)
+            config_to_load = None
+            if load_method == "Upload":
+                uploaded = st.file_uploader("YAML", type=["yaml", "yml"], key="config_file_upload")
+                if uploaded:
+                    try:
+                        config_to_load = yaml.safe_load(uploaded.read().decode("utf-8"))
+                    except Exception as e:
+                        st.error(str(e)[:40])
+            elif load_method == "Path":
+                cp = st.text_input("Path", placeholder="/path/config.yaml", key="config_path_input")
+                if cp and os.path.isfile(cp):
+                    try:
+                        with open(cp) as f:
+                            config_to_load = yaml.safe_load(f.read())
+                    except Exception as e:
+                        st.error(str(e)[:40])
+            else:
+                save_dir = st.session_state.get("save_dir", "")
+                parent = os.path.dirname(save_dir) if save_dir else ""
+                found = [(d, os.path.join(parent, d, "config.yaml"))
+                         for d in (os.listdir(parent) if parent and os.path.isdir(parent) else [])
+                         if os.path.isfile(os.path.join(parent, d, "config.yaml"))]
+                if found:
+                    sel = st.selectbox("Run", range(len(found)), format_func=lambda i: found[i][0], key="config_from_run_select")
+                    with open(found[sel][1]) as f:
+                        config_to_load = yaml.safe_load(f.read())
+            if config_to_load:
+                if st.button("Apply", type="primary", key="apply_loaded_config", use_container_width=True):
+                    _apply_config_dict(config_to_load)
+                    st.rerun()
 
 
-def _apply_config_dict(config: dict):
-    """Apply a loaded config dictionary to session state."""
-    mappings = {
-        # dataset
-        ("dataset", "name"): "dataset_name",
-        ("dataset", "train_images"): "train_img_path",
-        ("dataset", "val_images"): "val_img_path",
-        ("dataset", "format"): "ann_format",
-        ("dataset", "num_classes"): "upload_num_classes",
-        ("dataset", "class_names"): "class_names",
-        # model
-        ("model", "architecture"): "arch_family",
-        ("model", "model_size"): "model_arch",
-        ("model", "pretrained"): "pretrain_option",
-        ("model", "custom_weights"): "custom_weights",
-        # training
-        ("training", "epochs"): "epochs",
-        ("training", "batch_size"): "batch_size",
-        ("training", "learning_rate"): "lr",
-        ("training", "image_size"): "img_size",
-        ("training", "warmup_epochs"): "warmup_epochs",
-        ("training", "patience"): "patience",
-        ("training", "grad_accum"): "grad_accum",
-        ("training", "num_workers"): "num_workers",
-        # optimizer
-        ("optimizer", "name"): "optimizer",
-        ("optimizer", "weight_decay"): "weight_decay",
-        ("optimizer", "use_8bit"): "use_8bit_optimizer",
-        # augmentation
-        ("augmentation", "mosaic"): "aug_mosaic",
-        ("augmentation", "mixup"): "aug_mixup",
-        ("augmentation", "copy_paste"): "aug_copypaste",
-        # finetune
-        ("finetune", "strategy"): "finetune_strategy",
-        ("finetune", "lora_variant"): "lora_variant",
-        ("finetune", "lora_rank"): "lora_rank",
-        ("finetune", "lora_alpha"): "lora_alpha",
-        ("finetune", "lora_dropout"): "lora_dropout",
-        ("finetune", "lora_targets"): "lora_targets",
-        ("finetune", "qlora"): "qlora",
-        ("finetune", "qlora_dtype"): "qlora_dtype",
-        # advanced
-        ("advanced", "amp"): "amp",
-        ("advanced", "compile"): "compile_model",
-        ("advanced", "multi_gpu"): "ddp",
-        ("advanced", "activation_checkpointing"): "activation_checkpointing",
-        ("advanced", "activation_offloading"): "activation_offloading",
-        ("advanced", "optimizer_in_bwd"): "optimizer_in_bwd",
-        ("advanced", "chunked_loss"): "chunked_loss",
-        ("advanced", "chunk_size"): "chunk_size",
-        # output
-        ("output", "save_dir"): "save_dir",
-    }
-
-    for (section, key), state_key in mappings.items():
-        if section in config and key in config[section]:
-            val = config[section][key]
-            if val is not None and val != "":
-                st.session_state[state_key] = val
-
-    # Run name from project section
-    if "project" in config and "name" in config["project"]:
-        st.session_state["run_name"] = config["project"]["name"]
+_build_config_dict = build_training_config
+_apply_config_dict = apply_training_config
 
 
-def _get_folder_size_str(path: str) -> str:
-    """Get human-readable folder size."""
-    total = 0
-    try:
-        for dirpath, _dirs, files in os.walk(path):
-            for f in files:
-                total += os.path.getsize(os.path.join(dirpath, f))
-    except OSError:
-        return "0 B"
-    if total > 1_073_741_824:
-        return f"{total / 1_073_741_824:.1f} GB"
-    elif total > 1_048_576:
-        return f"{total / 1_048_576:.0f} MB"
-    elif total > 1024:
-        return f"{total / 1024:.0f} KB"
-    return f"{total} B"
+_get_folder_size_str = dir_size_str
 
 
 def _generate_run_name() -> str:
@@ -1362,15 +941,6 @@ def _generate_run_name() -> str:
     ds_code = dataset.split("(")[0].strip().replace(" ", "")[:8].lower() if dataset else "custom"
     timestamp = datetime.now().strftime("%m%d_%H%M")
     return f"{size_code}_{ds_code}_{timestamp}"
-
-
-def _has_cuda() -> bool:
-    """Check if CUDA is available."""
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except ImportError:
-        return False
 
 
 def _run_preflight_checks() -> list:
@@ -1403,7 +973,7 @@ def _run_preflight_checks() -> list:
         checks.append(("Model", False, "No model selected"))
 
     # 4. Device
-    if _has_cuda():
+    if has_cuda():
         checks.append(("GPU", True, ""))
     else:
         checks.append(("GPU", False, "CPU only (slow)"))
@@ -1425,172 +995,91 @@ def _run_preflight_checks() -> list:
 
 
 def _render_clean_workspace_dialog():
-    """Render workspace cleanup dialog."""
-    st.divider()
+    """Compact workspace cleanup."""
     with st.container(border=True):
-        st.markdown("### 🧹 Clean Workspace")
-
         workspace = st.session_state.get("save_dir", os.path.join(os.getcwd(), "flashstudio_runs"))
         parent_dir = os.path.dirname(workspace) if not os.path.isdir(workspace) else workspace
 
         if not os.path.isdir(parent_dir):
-            st.info("Workspace directory does not exist yet. Nothing to clean.")
+            st.info("Nothing to clean.")
             if st.button("Close", key="close_clean"):
                 st.session_state["show_clean_dialog"] = False
                 st.rerun()
             return
 
-        # List existing runs
-        runs = []
-        for d in sorted(os.listdir(parent_dir)):
-            full = os.path.join(parent_dir, d)
-            if os.path.isdir(full):
-                size = _get_dir_size(full)
-                has_best = os.path.isfile(os.path.join(full, "checkpoint_best.pth"))
-                runs.append({"name": d, "path": full, "size": size, "has_best": has_best})
-
+        runs = [{"name": d, "path": os.path.join(parent_dir, d), "size": _get_dir_size(os.path.join(parent_dir, d)),
+                 "has_best": os.path.isfile(os.path.join(parent_dir, d, "checkpoint_best.pth"))}
+                for d in sorted(os.listdir(parent_dir)) if os.path.isdir(os.path.join(parent_dir, d))]
         if not runs:
-            st.info("No training runs found.")
-            if st.button("Close", key="close_clean"):
-                st.session_state["show_clean_dialog"] = False
-                st.rerun()
-            return
+            st.info("No runs."); return
 
-        st.markdown(f"**{len(runs)} runs** in `{parent_dir}`")
+        clean_mode = st.radio("Mode", ["Selected", "Keep best only", "Delete incomplete", "Full reset"],
+                              key="clean_mode", horizontal=True)
 
-        # Options
-        clean_mode = st.radio(
-            "Clean Mode",
-            [
-                "Delete selected runs",
-                "Keep only best checkpoints (delete logs, visualizations)",
-                "Delete all incomplete runs (no checkpoint_best.pth)",
-                "Delete everything (full reset)",
-            ],
-            key="clean_mode",
-        )
-
-        if clean_mode == "Delete selected runs":
-            selected = st.multiselect(
-                "Select runs to delete",
-                [r["name"] for r in runs],
-                key="runs_to_delete",
-            )
-            if selected and st.button("🗑️ Delete Selected", type="primary", key="do_delete_selected"):
-                for name in selected:
-                    path = os.path.join(parent_dir, name)
-                    if os.path.isdir(path):
-                        import shutil
-                        shutil.rmtree(path)
-                st.success(f"Deleted {len(selected)} run(s).")
-                st.session_state["show_clean_dialog"] = False
-                st.rerun()
-
-        elif clean_mode == "Keep only best checkpoints (delete logs, visualizations)":
-            st.caption("This will remove logs, visualizations, and non-best checkpoints — keeping only `checkpoint_best.pth` and `results.json`.")
-            if st.button("🧹 Clean Up", type="primary", key="do_keep_best"):
-                cleaned = 0
+        if clean_mode == "Selected":
+            selected = st.multiselect("Runs", [r["name"] for r in runs], key="runs_to_delete")
+            if selected and st.button("Delete", type="primary", key="do_delete_selected"):
+                import shutil
+                for n in selected:
+                    shutil.rmtree(os.path.join(parent_dir, n), ignore_errors=True)
+                st.session_state["show_clean_dialog"] = False; st.rerun()
+        elif clean_mode == "Keep best only":
+            if st.button("Clean", type="primary", key="do_keep_best"):
                 for r in runs:
-                    cleaned += _cleanup_run_keep_best(r["path"])
-                st.success(f"Cleaned {cleaned} files across {len(runs)} runs.")
-                st.session_state["show_clean_dialog"] = False
-                st.rerun()
-
-        elif clean_mode == "Delete all incomplete runs (no checkpoint_best.pth)":
+                    _cleanup_run_keep_best(r["path"])
+                st.session_state["show_clean_dialog"] = False; st.rerun()
+        elif clean_mode == "Delete incomplete":
             incomplete = [r for r in runs if not r["has_best"]]
-            st.caption(f"Found **{len(incomplete)}** incomplete runs (no best checkpoint).")
-            if incomplete and st.button("🗑️ Delete Incomplete", type="primary", key="do_delete_incomplete"):
+            st.caption(f"{len(incomplete)} incomplete")
+            if incomplete and st.button("Delete", type="primary", key="do_delete_incomplete"):
                 import shutil
                 for r in incomplete:
                     shutil.rmtree(r["path"])
-                st.success(f"Deleted {len(incomplete)} incomplete run(s).")
-                st.session_state["show_clean_dialog"] = False
-                st.rerun()
-
-        elif clean_mode == "Delete everything (full reset)":
-            st.error("⚠️ This will permanently delete ALL training runs!")
-            if st.button("🗑️ DELETE ALL", type="primary", key="do_delete_all"):
+                st.session_state["show_clean_dialog"] = False; st.rerun()
+        elif clean_mode == "Full reset":
+            if st.button("DELETE ALL", type="primary", key="do_delete_all"):
                 import shutil
-                shutil.rmtree(parent_dir)
-                os.makedirs(parent_dir, exist_ok=True)
-                st.success("Workspace cleaned. All runs deleted.")
-                st.session_state["show_clean_dialog"] = False
-                st.rerun()
+                shutil.rmtree(parent_dir); os.makedirs(parent_dir, exist_ok=True)
+                st.session_state["show_clean_dialog"] = False; st.rerun()
 
         if st.button("Cancel", key="cancel_clean"):
-            st.session_state["show_clean_dialog"] = False
-            st.rerun()
+            st.session_state["show_clean_dialog"] = False; st.rerun()
 
 
 def _render_resume_dialog():
-    """Render resume training dialog."""
-    st.divider()
+    """Compact resume dialog."""
     with st.container(border=True):
-        st.markdown("### 🔄 Resume Training")
-
         workspace = st.session_state.get("save_dir", os.path.join(os.getcwd(), "flashstudio_runs"))
         parent_dir = os.path.dirname(workspace) if not os.path.isdir(workspace) else workspace
-
-        if not os.path.isdir(parent_dir):
-            st.warning("No workspace found.")
-            if st.button("Close", key="close_resume"):
-                st.session_state["show_resume_dialog"] = False
-                st.rerun()
-            return
-
-        # Find runs with last checkpoint
         resumable = []
-        for d in sorted(os.listdir(parent_dir), reverse=True):
-            full = os.path.join(parent_dir, d)
-            last_ckpt = os.path.join(full, "checkpoint_last.pth")
-            if os.path.isdir(full) and os.path.isfile(last_ckpt):
-                resumable.append({"name": d, "path": full, "ckpt": last_ckpt})
-
+        if os.path.isdir(parent_dir):
+            for d in sorted(os.listdir(parent_dir), reverse=True):
+                full = os.path.join(parent_dir, d)
+                ckpt = os.path.join(full, "checkpoint_last.pth")
+                if os.path.isdir(full) and os.path.isfile(ckpt):
+                    resumable.append({"name": d, "path": full, "ckpt": ckpt})
         if not resumable:
-            st.info("No resumable runs found (requires `checkpoint_last.pth`).")
-            if st.button("Close", key="close_resume_empty"):
-                st.session_state["show_resume_dialog"] = False
-                st.rerun()
+            st.info("No resumable runs.")
+            if st.button("Close", key="close_resume"):
+                st.session_state["show_resume_dialog"] = False; st.rerun()
             return
-
-        selected = st.selectbox(
-            "Select run to resume",
-            [r["name"] for r in resumable],
-            key="resume_run_select",
-        )
-
-        if st.button("🔄 Resume", type="primary", key="do_resume"):
-            for r in resumable:
-                if r["name"] == selected:
-                    st.session_state["resume_training"] = True
-                    st.session_state["resume_path"] = r["ckpt"]
-                    st.session_state["save_dir"] = r["path"]
-                    st.session_state["training_active"] = True
-                    st.session_state["training_status"] = "Resuming"
-                    st.session_state["show_resume_dialog"] = False
-                    _start_training()
-                    break
-
-        if st.button("Cancel", key="cancel_resume"):
-            st.session_state["show_resume_dialog"] = False
-            st.rerun()
+        rc1, rc2, rc3 = st.columns([4, 1, 1])
+        with rc1:
+            selected = st.selectbox("Run", [r["name"] for r in resumable], key="resume_run_select", label_visibility="collapsed")
+        with rc2:
+            if st.button("Resume", type="primary", key="do_resume"):
+                for r in resumable:
+                    if r["name"] == selected:
+                        st.session_state.update({"resume_training": True, "resume_path": r["ckpt"],
+                                                 "save_dir": r["path"], "training_active": True,
+                                                 "training_status": "Resuming", "show_resume_dialog": False})
+                        _start_training(); break
+        with rc3:
+            if st.button("Cancel", key="cancel_resume"):
+                st.session_state["show_resume_dialog"] = False; st.rerun()
 
 
-def _get_dir_size(path: str) -> str:
-    """Get human-readable directory size."""
-    total = 0
-    for dirpath, _dirnames, filenames in os.walk(path):
-        for f in filenames:
-            fp = os.path.join(dirpath, f)
-            try:
-                total += os.path.getsize(fp)
-            except OSError:
-                pass
-    if total > 1024 * 1024 * 1024:
-        return f"{total / (1024**3):.1f} GB"
-    elif total > 1024 * 1024:
-        return f"{total / (1024**2):.1f} MB"
-    return f"{total / 1024:.0f} KB"
+_get_dir_size = dir_size_str
 
 
 def _cleanup_run_keep_best(run_dir: str) -> int:
@@ -1631,7 +1120,52 @@ def _stop_training():
 
     st.session_state["training_active"] = False
     st.session_state["training_status"] = "Stopped"
+    st.session_state["training_paused"] = False
     st.session_state["training_pid"] = None
+    st.rerun()
+
+
+def _pause_training():
+    """Pause the training subprocess by sending SIGSTOP."""
+    import signal
+
+    pid = st.session_state.get("training_pid")
+    if pid:
+        try:
+            os.kill(pid, signal.SIGSTOP)
+            st.session_state["training_paused"] = True
+            st.session_state["training_status"] = "Paused"
+            st.success(f"Training paused (PID {pid}). GPU memory is still held.")
+        except ProcessLookupError:
+            st.warning("Training process already finished.")
+            st.session_state["training_active"] = False
+            st.session_state["training_paused"] = False
+        except Exception as e:
+            st.error(f"Could not pause training: {e}")
+    else:
+        st.warning("No training process found to pause.")
+    st.rerun()
+
+
+def _resume_active_training():
+    """Resume a paused training subprocess by sending SIGCONT."""
+    import signal
+
+    pid = st.session_state.get("training_pid")
+    if pid:
+        try:
+            os.kill(pid, signal.SIGCONT)
+            st.session_state["training_paused"] = False
+            st.session_state["training_status"] = "Running"
+            st.success(f"Training resumed (PID {pid}).")
+        except ProcessLookupError:
+            st.warning("Training process already finished.")
+            st.session_state["training_active"] = False
+            st.session_state["training_paused"] = False
+        except Exception as e:
+            st.error(f"Could not resume training: {e}")
+    else:
+        st.warning("No training process found to resume.")
     st.rerun()
 
 
@@ -1687,7 +1221,7 @@ def _start_training():
             val_images = val_dir
             st.session_state["train_img_path"] = train_images
             st.session_state["val_img_path"] = val_images
-            st.success("✅ Dataset converted to COCO format.")
+            st.success("Dataset converted to COCO format.")
         except Exception as e:
             st.error(f"**Format conversion failed:** {e}\n\nPlease convert your dataset to COCO JSON format manually.")
             st.session_state["training_active"] = False

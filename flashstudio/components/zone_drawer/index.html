@@ -24,9 +24,9 @@ canvas { cursor: crosshair; border-radius: 8px; display: block; }
 </head>
 <body>
 <div class="toolbar">
-    <button class="btn btn-danger" onclick="clearAll()">🗑️ Clear</button>
+    <button class="btn btn-danger" onclick="clearAll()">Clear</button>
     <button class="btn" onclick="undoLast()">↩️ Undo</button>
-    <button class="btn btn-primary" id="closeBtn" onclick="closePolygon()" style="display:none">✅ Close Polygon</button>
+    <button class="btn btn-primary" id="closeBtn" onclick="closePolygon()" style="display:none">Close Polygon</button>
     <span class="status" id="status">Click on frame to add points</span>
 </div>
 <div class="container">
@@ -208,9 +208,9 @@ function updateUI() {
     }
 
     if (closed) {
-        if (mode === 'line') status.textContent = `✅ Line defined (2 points)`;
-        else if (mode === 'rect') status.textContent = `✅ Rectangle defined`;
-        else status.textContent = `✅ Polygon closed (${points.length} vertices)`;
+        if (mode === 'line') status.textContent = `Line defined (2 points)`;
+        else if (mode === 'rect') status.textContent = `Rectangle defined`;
+        else status.textContent = `Polygon closed (${points.length} vertices)`;
     } else {
         const needed = (mode === 'line' || mode === 'rect') ? 2 : 3;
         status.textContent = `📍 ${points.length}/${needed}+ points — click to add`;
