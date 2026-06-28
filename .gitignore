@@ -15,3 +15,4 @@ venv/
 data/voc2012/
 data/coco2017/
 data/sample/
+.cursor/
