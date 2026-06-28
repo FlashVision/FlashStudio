@@ -21,6 +21,7 @@ data/coco128_tiny_subset/
 demos/_frames/
 *.log
 flashstudio_runs/
+workspace/
 *.flashstudio/
 *.pt
 *.pth

@@ -7,9 +7,27 @@ import streamlit as st
 from PIL import Image
 
 try:
+    # Patch for streamlit-drawable-canvas 0.9.x + Streamlit 1.30+
+    # st.elements.image.image_to_url was removed; provide a shim
+    import streamlit.elements.image as _img_mod
+    if not hasattr(_img_mod, "image_to_url"):
+        def _image_to_url(image, width, clamp, channels, output_format, image_id, allow_emoji=True):
+            """Compatibility shim for removed image_to_url."""
+            import base64
+            buf = io.BytesIO()
+            if isinstance(image, Image.Image):
+                image.save(buf, format="PNG")
+            elif isinstance(image, np.ndarray):
+                Image.fromarray(image).save(buf, format="PNG")
+            else:
+                return ""
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            return f"data:image/png;base64,{b64}"
+        _img_mod.image_to_url = _image_to_url
+
     from streamlit_drawable_canvas import st_canvas
     _HAS_CANVAS = True
-except ImportError:
+except (ImportError, Exception):
     _HAS_CANVAS = False
 
 

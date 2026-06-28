@@ -1,10 +1,20 @@
-# ⚡ FlashStudio
+<p align="center">
+  <img src="https://raw.githubusercontent.com/FlashVision/FlashStudio/main/assets/logo.png" width="200" alt="FlashStudio Logo">
+</p>
 
-[![PyPI version](https://badge.fury.io/py/flashstudio.svg)](https://pypi.org/project/flashstudio/)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
+<h1 align="center">FlashStudio</h1>
 
-**Interactive Training & Inference UI for FlashDet** — runs locally or on Google Colab with a Streamlit interface.
+<p align="center">
+  <a href="https://pypi.org/project/flashstudio/"><img src="https://badge.fury.io/py/flashstudio.svg" alt="PyPI version"></a>
+  <img src="https://img.shields.io/badge/python-3.9+-blue.svg?logo=python&logoColor=white" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/Streamlit-UI-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit">
+  <img src="https://img.shields.io/badge/FlashDet-Powered-00CCFF?logo=lightning&logoColor=white" alt="FlashDet">
+  <img src="https://img.shields.io/badge/License-Apache%202.0-green.svg" alt="License">
+</p>
+
+<p align="center">
+  <b>Interactive Training & Inference UI for FlashDet — runs locally or on Google Colab with a Streamlit interface.</b>
+</p>
 
 <p align="center">
   <img src="docs/mockups/flashstudio_streamlit_mockup.png" width="800" alt="FlashStudio UI"/>

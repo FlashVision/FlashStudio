@@ -8,7 +8,17 @@ import tempfile
 import streamlit as st
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from flashstudio.components.styles import render_page_header, render_info_bar
+from flashstudio.components.styles import render_page_header
+from flashstudio.constants import (
+    COCO_CLASSES, BBOX_COLORS_HEX, BBOX_COLORS_RGB,
+    INFER_CONF_THRESHOLD, INFER_NMS_THRESHOLD, INFER_IMG_SIZE,
+    INFER_NUM_CLASSES, INFER_MAX_FRAMES, INFER_STREAM_DURATION,
+    INFER_FRAME_SKIP, INFER_DISPLAY_WIDTH, INFER_DEFAULT_RESOLUTION,
+    ZONE_MAX_X, ZONE_MAX_Y, ZONE_DEFAULT_LINE, ZONE_DEFAULT_POLYGON,
+    FONT_PATH_LINUX, FONT_SIZE_DEFAULT, MAX_PREVIEW_COLS,
+    MAX_PREVIEW_IMAGES, COLOR_PRIMARY, DEFAULT_SAVE_DIR,
+    BEST_WEIGHT_PRIORITY, FLASHDET_MODELS, DEFAULT_MODEL_ARCH,
+)
 
 try:
     from flashstudio.components.zone_drawer import zone_drawer
@@ -37,23 +47,6 @@ for _cls_name in _solution_classes:
     except (ImportError, AttributeError):
         pass
 
-COCO_CLASSES = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
-    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
-    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
-    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
-    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
-    "hair drier", "toothbrush",
-]
-
-COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
-          "#DDA0DD", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E9"]
 
 SOLUTIONS = {
     "None (Detection Only)": {"desc": "Standard object detection", "needs_zone": False},
@@ -74,6 +67,18 @@ SOLUTIONS = {
     "Object Cropper": {"desc": "Crop detections", "needs_zone": False},
     "Analytics Dashboard": {"desc": "Real-time stats", "needs_zone": False},
 }
+
+
+def _get_class_names():
+    """Get class names from session state, falling back to COCO."""
+    raw = st.session_state.get("class_names", "")
+    if isinstance(raw, list):
+        names = [c.strip() for c in raw if c.strip()]
+    elif isinstance(raw, str) and raw.strip():
+        names = [c.strip() for c in raw.strip().split("\n") if c.strip()]
+    else:
+        names = []
+    return names if names else COCO_CLASSES
 
 
 def _get_device_options():
@@ -129,17 +134,18 @@ def _tab_model():
     with col1:
         with st.container(border=True):
             st.markdown("#### Architecture & Params")
-            st.selectbox("Model", ["FlashDet-Pico", "FlashDet-Nano", "FlashDet-Small", "FlashDet-Medium", "FlashDet-Large", "FlashDet-X"],
+            st.selectbox("Model", list(FLASHDET_MODELS.keys()),
                          key="infer_model_arch")
             pc1, pc2 = st.columns(2)
             with pc1:
-                st.slider("Confidence", 0.0, 1.0, 0.25, 0.05, key="infer_conf")
-                st.number_input("Img Size", 320, 1920, 640, 32, key="infer_img_size")
+                st.slider("Confidence", 0.0, 1.0, INFER_CONF_THRESHOLD, 0.05, key="infer_conf")
+                st.number_input("Img Size", 320, 1920, INFER_IMG_SIZE, 32, key="infer_img_size")
             with pc2:
-                st.slider("NMS IoU", 0.0, 1.0, 0.45, 0.05, key="infer_nms")
+                st.slider("NMS IoU", 0.0, 1.0, INFER_NMS_THRESHOLD, 0.05, key="infer_nms")
                 st.selectbox("Device", _get_device_options(), key="infer_device")
-            st.number_input("Classes", 1, 1000, 80, key="infer_num_classes")
-            st.multiselect("Filter (empty=all)", COCO_CLASSES, default=[], key="infer_class_filter")
+            st.number_input("Classes", 1, 1000, INFER_NUM_CLASSES, key="infer_num_classes")
+            filter_classes = _get_class_names()
+            st.multiselect("Filter (empty=all)", filter_classes, default=[], key="infer_class_filter")
 
     with col2:
         with st.container(border=True):
@@ -152,9 +158,25 @@ def _tab_model():
             elif ws == "Path":
                 st.text_input("Path", placeholder="/path/best.pth", key="infer_weights_path")
             else:
-                p = f"{st.session_state.get('save_dir', 'workspace')}/model_best_inference.pth"
-                st.session_state["infer_weights_path"] = p
-                st.caption(f"Using: `{p}`")
+                sd = st.session_state.get("save_dir", DEFAULT_SAVE_DIR)
+                best_path = ""
+                for candidate in BEST_WEIGHT_PRIORITY:
+                    if os.path.isdir(sd):
+                        for root, _d, files in os.walk(sd):
+                            if candidate in files:
+                                best_path = os.path.join(root, candidate)
+                                break
+                    if best_path:
+                        break
+                if not best_path:
+                    best_path = os.path.join(sd, "model_best_inference.pth")
+                st.session_state["infer_weights_path"] = best_path
+                exists = os.path.isfile(best_path)
+                if exists:
+                    sz = os.path.getsize(best_path) / (1024 * 1024)
+                    st.success(f"`{os.path.basename(best_path)}` ({sz:.1f}MB)")
+                else:
+                    st.caption(f"Not found: `{best_path}`")
 
 
 # ════════════════════════════════════════
@@ -168,12 +190,12 @@ def _tab_data():
         uploaded = st.file_uploader("Images", type=["jpg", "jpeg", "png", "webp", "bmp"],
                                     accept_multiple_files=True, key="infer_images")
         if uploaded:
-            cols = st.columns(min(len(uploaded), 6))
-            for i, f in enumerate(uploaded[:6]):
+            cols = st.columns(min(len(uploaded), MAX_PREVIEW_IMAGES))
+            for i, f in enumerate(uploaded[:MAX_PREVIEW_IMAGES]):
                 with cols[i]:
                     st.image(f, caption=f.name[:10], use_container_width=True)
-            if len(uploaded) > 6:
-                st.caption(f"+{len(uploaded) - 6} more")
+            if len(uploaded) > MAX_PREVIEW_IMAGES:
+                st.caption(f"+{len(uploaded) - MAX_PREVIEW_IMAGES} more")
 
     elif input_type == "Video":
         vc1, vc2 = st.columns([3, 1])
@@ -190,8 +212,8 @@ def _tab_data():
                     with mc[2]: st.metric("Frames", meta["total_frames"])
                     with mc[3]: st.metric("Dur", f"{meta['total_frames'] / max(meta['fps'], 1):.0f}s")
         with vc2:
-            st.number_input("Max frames (0=all)", 0, 100000, 300, key="infer_max_frames")
-            st.select_slider("Skip N", [1, 2, 3, 5, 10], value=1, key="infer_frame_skip")
+            st.number_input("Max frames (0=all)", 0, 100000, INFER_MAX_FRAMES, key="infer_max_frames")
+            st.select_slider("Skip N", [1, 2, 3, 5, 10], value=INFER_FRAME_SKIP, key="infer_frame_skip")
             st.checkbox("Save output", True, key="infer_save_video")
 
     else:
@@ -199,7 +221,7 @@ def _tab_data():
         with sc1:
             st.text_input("RTSP URL", placeholder="rtsp://192.168.1.100:554/stream", key="infer_stream_url")
         with sc2:
-            st.number_input("Duration (s)", 0, 3600, 60, key="infer_stream_duration")
+            st.number_input("Duration (s)", 0, 3600, INFER_STREAM_DURATION, key="infer_stream_duration")
         if st.session_state.get("infer_stream_url") and st.button("Test", key="test_stream"):
             _test_stream()
 
@@ -215,12 +237,23 @@ def _tab_solution():
                                 format_func=lambda x: x)
         sol = SOLUTIONS[selected]
         st.caption(sol["desc"])
+        avail = len(_SOLUTIONS_AVAILABLE)
+        total = len(_solution_classes)
+        st.caption(f"{avail}/{total} solutions available")
 
     with sc2:
         if sol["needs_zone"]:
             st.info("Zone required — draw below using Polygon, Rectangle, or Line.")
         else:
             st.caption("Zone optional — draw one to limit detection area.")
+        # Show current zone status
+        has_line = bool(st.session_state.get("zone_line_points"))
+        has_poly = bool(st.session_state.get("zone_polygons"))
+        if has_line or has_poly:
+            zone_type = "Line" if has_line else "Polygon"
+            st.success(f"Zone set: {zone_type}")
+        elif sol["needs_zone"]:
+            st.warning("No zone defined yet")
 
     _zone_draw_ui(sol)
 
@@ -239,13 +272,13 @@ def _zone_draw_ui(sol):
 
     if _HAS_ZONE_DRAWER:
         result = zone_drawer(image=frame_img, mode=draw_mode, points=existing_points,
-                             closed=existing_closed, display_width=650)
+                             closed=existing_closed, display_width=INFER_DISPLAY_WIDTH)
         if result and result.get("points"):
             pts = result["points"]
-            img_w = frame_img.size[0] if frame_img else 640
-            img_h = frame_img.size[1] if frame_img else 480
-            dw = result.get("displayWidth", 650)
-            dh = result.get("displayHeight", 480)
+            img_w = frame_img.size[0] if frame_img else INFER_DEFAULT_RESOLUTION[0]
+            img_h = frame_img.size[1] if frame_img else INFER_DEFAULT_RESOLUTION[1]
+            dw = result.get("displayWidth", INFER_DISPLAY_WIDTH)
+            dh = result.get("displayHeight", INFER_DEFAULT_RESOLUTION[1])
             sx = img_w / dw if dw else 1
             sy = img_h / dh if dh else 1
             _store_zone_coords(pts, draw_mode, sx, sy)
@@ -260,16 +293,16 @@ def _manual_zone_input(draw_mode):
     if draw_mode == "line":
         c1, c2 = st.columns(2)
         with c1:
-            x1 = st.number_input("X1", 0, 1920, 100, key="manual_line_x1")
-            y1 = st.number_input("Y1", 0, 1080, 240, key="manual_line_y1")
+            x1 = st.number_input("X1", 0, ZONE_MAX_X, ZONE_DEFAULT_LINE[0][0], key="manual_line_x1")
+            y1 = st.number_input("Y1", 0, ZONE_MAX_Y, ZONE_DEFAULT_LINE[0][1], key="manual_line_y1")
         with c2:
-            x2 = st.number_input("X2", 0, 1920, 540, key="manual_line_x2")
-            y2 = st.number_input("Y2", 0, 1080, 240, key="manual_line_y2")
+            x2 = st.number_input("X2", 0, ZONE_MAX_X, ZONE_DEFAULT_LINE[1][0], key="manual_line_x2")
+            y2 = st.number_input("Y2", 0, ZONE_MAX_Y, ZONE_DEFAULT_LINE[1][1], key="manual_line_y2")
         if st.button("Set Line", key="set_manual_line"):
             st.session_state["zone_line_points"] = [(x1, y1), (x2, y2)]
             st.success(f"({x1},{y1}) → ({x2},{y2})")
     else:
-        pts = st.text_area("Points (x,y per line)", "100,100\n500,100\n500,400\n100,400", key="manual_polygon_text")
+        pts = st.text_area("Points (x,y per line)", ZONE_DEFAULT_POLYGON, key="manual_polygon_text")
         btn_label = "Set Rectangle" if draw_mode == "rect" else "Set Polygon"
         min_pts = 2 if draw_mode == "rect" else 3
         if st.button(btn_label, key="set_manual_polygon"):
@@ -313,7 +346,7 @@ def _tab_run():
     # Compact config summary
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Model", st.session_state.get("infer_model_arch", "FlashDet-Nano").replace("FlashDet-", ""))
+        st.metric("Model", st.session_state.get("infer_model_arch", DEFAULT_MODEL_ARCH).replace("FlashDet-", ""))
     with m2:
         st.metric("Input", st.session_state.get("infer_input_type", "Images"))
     with m3:
@@ -450,14 +483,18 @@ def _show_video_results():
         st.metric("Time", f"{res.get('elapsed_time', 0):.1f}s")
 
     sol = res.get("solution_output", {})
-    if "in_count" in sol:
+    in_count = sol.get("in_count") or sol.get("in", 0)
+    out_count = sol.get("out_count") or sol.get("out", 0)
+    if in_count or out_count:
         sc1, sc2, sc3 = st.columns(3)
-        with sc1: st.metric("In", sol["in_count"])
-        with sc2: st.metric("Out", sol["out_count"])
-        with sc3: st.metric("Net", sol["in_count"] - sol["out_count"])
-    if "region_counts" in sol:
-        cols = st.columns(len(sol["region_counts"]))
-        for i, (r, c) in enumerate(sol["region_counts"].items()):
+        with sc1: st.metric("In", in_count)
+        with sc2: st.metric("Out", out_count)
+        with sc3: st.metric("Net", in_count - out_count)
+    region_data = sol.get("region_counts") or {k: v for k, v in sol.items()
+                                                if k not in ("in", "out", "in_count", "out_count", "total", "speeds") and isinstance(v, (int, float))}
+    if region_data:
+        cols = st.columns(min(len(region_data), 6))
+        for i, (r, c) in enumerate(list(region_data.items())[:6]):
             with cols[i]:
                 st.metric(r, c)
     if "speeds" in sol:
@@ -481,10 +518,10 @@ def _run_demo_video(solution_name):
     for i in range(4):
         time.sleep(0.2)
         progress.progress((i + 1) / 4)
-        img = Image.new("RGB", (640, 480), (248, 248, 252))
+        img = Image.new("RGB", INFER_DEFAULT_RESOLUTION, (248, 248, 252))
         draw = ImageDraw.Draw(img)
-        draw.rectangle([80 + i * 40, 80 + i * 30, 250 + i * 40, 230 + i * 30], outline="#7C3AED", width=3)
-        draw.text((90 + i * 40, 65 + i * 30), f"car 0.{85 + i}", fill="#1A1A2E")
+        draw.rectangle([80 + i * 40, 80 + i * 30, 250 + i * 40, 230 + i * 30], outline=COLOR_PRIMARY, width=3)
+        draw.text((90 + i * 40, 65 + i * 30), f"car 0.{85 + i}", fill=COLOR_PRIMARY)
         frames.append(img)
     progress.empty()
     elapsed = time.perf_counter() - t0
@@ -525,15 +562,15 @@ def _run_flashdet_video(video_file, solution_name):
 
     custom_cls = _get_class_names()
     predictor = Predictor(model_path=weights, device=st.session_state.get("infer_device", "cpu").split(" ")[0],
-                          conf_thresh=st.session_state.get("infer_conf", 0.25),
-                          nms_thresh=st.session_state.get("infer_nms", 0.45),
-                          input_size=st.session_state.get("infer_img_size", 640),
+                          conf_thresh=st.session_state.get("infer_conf", INFER_CONF_THRESHOLD),
+                          nms_thresh=st.session_state.get("infer_nms", INFER_NMS_THRESHOLD),
+                          input_size=st.session_state.get("infer_img_size", INFER_IMG_SIZE),
                           class_names=custom_cls if custom_cls != COCO_CLASSES else None)
     tracker = FlashTracker()
     solution = _create_solution(solution_name, predictor, tracker, fps)
 
-    max_frames = st.session_state.get("infer_max_frames", 300) or total
-    skip = st.session_state.get("infer_frame_skip", 1)
+    max_frames = st.session_state.get("infer_max_frames", INFER_MAX_FRAMES) or total
+    skip = st.session_state.get("infer_frame_skip", INFER_FRAME_SKIP)
     frames_preview, processed, total_dets = [], 0, 0
     t0 = time.perf_counter()
     progress = st.progress(0)
@@ -594,19 +631,20 @@ def _create_solution(solution_name, predictor, tracker, fps):
     if solution_name == "None (Detection Only)":
         return None
 
+    first_poly = polygons[0] if polygons and len(polygons) > 0 else []
     sol_map = {
         "Object Counter": ("ObjectCounter", dict(line_points=line_pts, classes=classes)),
-        "Region Counter": ("RegionCounter", dict(regions={"zone_0": polygons[0]} if polygons else {}, classes=classes)),
+        "Region Counter": ("RegionCounter", dict(regions={"zone_0": first_poly} if first_poly else {}, classes=classes)),
         "Speed Estimator": ("SpeedEstimator", dict(fps=fps, classes=classes)),
         "Heatmap": ("Heatmap", dict(classes=classes)),
-        "Security Alarm": ("SecurityAlarm", dict(restricted_zones=polygons, classes=classes)),
+        "Security Alarm": ("SecurityAlarm", dict(restricted_zones=polygons or [], classes=classes)),
         "Trajectory": ("TrajectoryVisualizer", dict(classes=classes)),
         "Blurrer": ("ObjectBlurrer", dict(classes=classes)),
-        "Queue": ("QueueManager", dict(queue_regions=polygons, classes=classes, fps=fps)),
+        "Queue": ("QueueManager", dict(queue_regions=polygons or [], classes=classes, fps=fps)),
         "Crowd": ("CrowdDensity", dict(classes=classes)),
-        "Parking": ("ParkingManager", dict(parking_spots=polygons, classes=classes)),
+        "Parking": ("ParkingManager", dict(parking_spots=polygons or [], classes=classes)),
         "Traffic": ("TrafficFlow", dict(fps=fps, classes=classes)),
-        "Dwell": ("DwellTimeAnalyzer", dict(zones={"zone_0": polygons[0]} if polygons else {}, fps=fps, classes=classes)),
+        "Dwell": ("DwellTimeAnalyzer", dict(zones={"zone_0": first_poly} if first_poly else {}, fps=fps, classes=classes)),
         "Distance": ("DistanceCalculator", dict(classes=classes)),
         "Workout": ("WorkoutMonitor", dict(classes=classes)),
         "Cropper": ("ObjectCropper", dict(classes=classes)),
@@ -657,9 +695,9 @@ def _detect_real(image, weights_path):
         raise ImportError("Predictor unavailable")
     custom_cls = _get_class_names()
     predictor = Predictor(model_path=weights_path, device=st.session_state.get("infer_device", "cpu").split(" ")[0],
-                          conf_thresh=st.session_state.get("infer_conf", 0.25),
-                          nms_thresh=st.session_state.get("infer_nms", 0.45),
-                          input_size=st.session_state.get("infer_img_size", 640),
+                          conf_thresh=st.session_state.get("infer_conf", INFER_CONF_THRESHOLD),
+                          nms_thresh=st.session_state.get("infer_nms", INFER_NMS_THRESHOLD),
+                          input_size=st.session_state.get("infer_img_size", INFER_IMG_SIZE),
                           class_names=custom_cls if custom_cls != COCO_CLASSES else None)
     raw = predictor(np.array(image))
     class_filter = st.session_state.get("infer_class_filter", [])
@@ -676,7 +714,7 @@ def _detect_real(image, weights_path):
 def _detect_demo(image):
     w, h = image.size
     rng = np.random.default_rng(hash(image.tobytes()[:100]) % (2 ** 31))
-    conf_thr = st.session_state.get("infer_conf", 0.25)
+    conf_thr = st.session_state.get("infer_conf", INFER_CONF_THRESHOLD)
     class_filter = st.session_state.get("infer_class_filter", [])
     dets = []
     for _ in range(rng.integers(3, 8)):
@@ -702,9 +740,9 @@ def _draw_boxes_cv2(frame, raw_results):
         cid = int(cls_id)
         name = label_list[cid] if cid < len(label_list) else f"cls_{cid}"
         label = f"{name} {float(score):.2f}"
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (124, 58, 237), 2)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), BBOX_COLORS_RGB[cid % len(BBOX_COLORS_RGB)], 2)
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(frame, (x1, y1 - th - 6), (x1 + tw + 4, y1), (124, 58, 237), -1)
+        cv2.rectangle(frame, (x1, y1 - th - 6), (x1 + tw + 4, y1), BBOX_COLORS_RGB[cid % len(BBOX_COLORS_RGB)], -1)
         cv2.putText(frame, label, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
     return frame
 
@@ -712,12 +750,12 @@ def _draw_boxes_cv2(frame, raw_results):
 def _draw_boxes(image, dets):
     draw = ImageDraw.Draw(image)
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+        font = ImageFont.truetype(FONT_PATH_LINUX, FONT_SIZE_DEFAULT)
     except (OSError, IOError):
         font = ImageFont.load_default()
     for i, (cls, conf, bbox_str) in enumerate(dets):
         bbox = json.loads(bbox_str.replace("'", '"'))
-        color = COLORS[i % len(COLORS)]
+        color = BBOX_COLORS_HEX[i % len(BBOX_COLORS_HEX)]
         draw.rectangle(bbox, outline=color, width=3)
         label = f"{cls} {conf}"
         tb = draw.textbbox((0, 0), label, font=font)
@@ -733,7 +771,7 @@ def _to_coco_format(results):
             "categories": [{"id": i, "name": n} for i, n in enumerate(COCO_CLASSES)]}
     aid = 1
     for iid, r in enumerate(results, 1):
-        coco["images"].append({"id": iid, "file_name": r["name"], "width": r.get("width", 640), "height": r.get("height", 480)})
+        coco["images"].append({"id": iid, "file_name": r["name"], "width": r.get("width", INFER_DEFAULT_RESOLUTION[0]), "height": r.get("height", INFER_DEFAULT_RESOLUTION[1])})
         for cls, conf, bbox_str in r["dets"]:
             bbox = json.loads(bbox_str.replace("'", '"'))
             coco["annotations"].append({"id": aid, "image_id": iid,

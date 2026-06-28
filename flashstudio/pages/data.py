@@ -3,6 +3,13 @@
 import os
 import json
 import streamlit as st
+
+from flashstudio.constants import (
+    IMG_EXTENSIONS, IMG_EXTENSIONS_ALL, DEFAULT_DATA_DIR,
+    NETWORK_CHECK_URL, NETWORK_CHECK_TIMEOUT,
+    BBOX_COLORS_RGB, MAX_PREVIEW_COLS, INFER_NUM_CLASSES,
+)
+
 try:
     from flashdet import download_dataset, list_datasets
     from flashdet.data import convert_dataset, detect_dataset_format, verify_dataset, summarize_coco_root
@@ -56,7 +63,7 @@ def _get_native_datasets():
 def _check_network() -> bool:
     import urllib.request, urllib.error
     try:
-        urllib.request.urlopen("http://images.cocodataset.org", timeout=5)
+        urllib.request.urlopen(NETWORK_CHECK_URL, timeout=NETWORK_CHECK_TIMEOUT)
         return True
     except (urllib.error.URLError, OSError):
         return False
@@ -64,11 +71,13 @@ def _check_network() -> bool:
 
 def _dataset_already_downloaded(dataset_id: str, output_dir: str | None = None) -> str | None:
     if output_dir is None:
-        output_dir = os.path.join("data", dataset_id)
+        output_dir = os.path.join(DEFAULT_DATA_DIR, dataset_id)
     if not os.path.isdir(output_dir):
         return None
     t = os.path.join(output_dir, "train")
     v = os.path.join(output_dir, "valid")
+    if not os.path.isdir(v):
+        v = os.path.join(output_dir, "val")
     if os.path.isdir(t) and os.path.isdir(v) and os.listdir(t) and os.listdir(v):
         return output_dir
     return None
@@ -107,10 +116,20 @@ def render_data_page():
     if dataset:
         train_path = st.session_state.get("train_img_path", "")
         val_path = st.session_state.get("val_img_path", "")
-        EXT = (".jpg", ".png", ".jpeg")
-        tc = len([f for f in os.listdir(train_path) if f.lower().endswith(EXT)]) if train_path and os.path.isdir(train_path) else 0
-        vc = len([f for f in os.listdir(val_path) if f.lower().endswith(EXT)]) if val_path and os.path.isdir(val_path) else 0
-        st.success(f"**{dataset}** — {tc} train / {vc} val images")
+        tc = len([f for f in os.listdir(train_path) if f.lower().endswith(IMG_EXTENSIONS)]) if train_path and os.path.isdir(train_path) else 0
+        vc = len([f for f in os.listdir(val_path) if f.lower().endswith(IMG_EXTENSIONS)]) if val_path and os.path.isdir(val_path) else 0
+        dc1, dc2 = st.columns([8, 1])
+        with dc1:
+            st.success(f"**{dataset}** — {tc} train / {vc} val images")
+        with dc2:
+            if st.button("Clear", key="clear_dataset_btn", use_container_width=True):
+                from flashstudio.utils import flash
+                for k in ["dataset_name", "train_img_path", "val_img_path",
+                           "dataset_output_path", "class_names", "num_classes",
+                           "detected_format", "_last_verify_ok"]:
+                    st.session_state.pop(k, None)
+                flash("Dataset cleared", "info")
+                st.rerun()
 
     tab_upload, tab_download, tab_preview, tab_verify = st.tabs(["Upload", "Download", "Preview", "Verify"])
 
@@ -154,12 +173,10 @@ def _render_upload():
             if manual_val:
                 st.session_state["val_img_path"] = manual_val
 
-    fc1, fc2, fc3 = st.columns([2, 1, 2])
+    fc1, fc2 = st.columns([2, 2])
     with fc1:
         st.selectbox("Format", ["COCO JSON", "Pascal VOC", "YOLO TXT"], key="ann_format")
     with fc2:
-        pass
-    with fc3:
         if train_upload:
             st.session_state["dataset_name"] = train_upload.name
             if not st.session_state.get("train_img_path"):
@@ -215,6 +232,8 @@ def _render_class_config():
 
         # Auto-detect on first load if classes not set
         current_classes = st.session_state.get("class_names", "")
+        if isinstance(current_classes, list):
+            current_classes = "\n".join(current_classes)
         if not current_classes.strip() and st.session_state.get("train_img_path"):
             detected = _auto_detect_classes()
             if detected:
@@ -222,14 +241,17 @@ def _render_class_config():
                 st.session_state["num_classes"] = len(detected)
 
         # Editable text area
+        _cv = st.session_state.get("class_names", "")
+        if isinstance(_cv, list):
+            _cv = "\n".join(_cv)
         class_text = st.text_area(
             "Class names (one per line)",
-            value=st.session_state.get("class_names", ""),
+            value=_cv,
             height=100,
             key="_class_names_input",
             placeholder="person\ncar\nbicycle\n...",
         )
-        if class_text != st.session_state.get("class_names", ""):
+        if class_text != _cv:
             names = [n.strip() for n in class_text.strip().split("\n") if n.strip()]
             st.session_state["class_names"] = "\n".join(names)
             st.session_state["num_classes"] = len(names)
@@ -314,7 +336,7 @@ def _render_download():
                         if existing:
                             _use_existing(existing, ds)
                         else:
-                            st.session_state.update({"dataset_name": ds.get("name", did), "dataset_id": did, "dataset_classes": ds.get("classes", 80)})
+                            st.session_state.update({"dataset_name": ds.get("name", did), "dataset_id": did, "dataset_classes": ds.get("classes", INFER_NUM_CLASSES)})
                             _run_flashdet_download(did)
 
     # External
@@ -357,18 +379,19 @@ def _render_preview():
         st.warning("Path not set.")
         return
 
-    EXT = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
-    all_imgs = sorted([f for f in os.listdir(preview_path) if f.lower().endswith(EXT)])
+    all_imgs = sorted([f for f in os.listdir(preview_path) if f.lower().endswith(IMG_EXTENSIONS)])
     if not all_imgs:
         st.warning("No images.")
         return
 
     with c2:
-        n = st.slider("Count", 1, min(12, len(all_imgs)), 4, key="prev_n")
+        n = st.slider("Count", 1, min(12, len(all_imgs)), min(4, len(all_imgs)), key="prev_n")
     with c3:
         bbox = st.checkbox("Boxes", value=True, key="prev_bb")
 
     if "prev_start" not in st.session_state:
+        st.session_state["prev_start"] = 0
+    if st.session_state["prev_start"] >= len(all_imgs):
         st.session_state["prev_start"] = 0
     start = st.session_state["prev_start"]
 
@@ -415,12 +438,11 @@ def _render_preview():
             yolo_label_dir = ""
 
     from PIL import Image, ImageDraw
-    COLORS = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255),(128,0,0),(0,128,0)]
     selected = all_imgs[start:start + n]
 
     total_boxes = 0
-    for row in range(0, len(selected), 4):
-        cols = st.columns(4)
+    for row in range(0, len(selected), MAX_PREVIEW_COLS):
+        cols = st.columns(MAX_PREVIEW_COLS)
         for j, col in enumerate(cols):
             idx = row + j
             if idx >= len(selected):
@@ -438,7 +460,7 @@ def _render_preview():
                                 b = a.get("bbox", [])
                                 if len(b) == 4:
                                     x, y, w, h = b
-                                    color = COLORS[a.get("category_id", 0) % len(COLORS)]
+                                    color = BBOX_COLORS_RGB[a.get("category_id", 0) % len(BBOX_COLORS_RGB)]
                                     draw.rectangle([x, y, x+w, y+h], outline=color, width=2)
                                     total_boxes += 1
                                     drawn = True
@@ -456,7 +478,7 @@ def _render_preview():
                                             y1 = int((cy - bh / 2) * h_img)
                                             x2 = int((cx + bw / 2) * w_img)
                                             y2 = int((cy + bh / 2) * h_img)
-                                            color = COLORS[cls_id % len(COLORS)]
+                                            color = BBOX_COLORS_RGB[cls_id % len(BBOX_COLORS_RGB)]
                                             draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
                                             total_boxes += 1
                     st.image(img, caption=f"{img_name[:15]} {w_img}x{h_img}", use_container_width=True)
@@ -486,14 +508,25 @@ def _render_verify():
         return
 
     dataset_root = st.session_state.get("dataset_output_path", "")
+    if not dataset_root and train_path:
+        parent = os.path.dirname(os.path.normpath(train_path))
+        if os.path.isdir(parent):
+            dataset_root = parent
 
     # FlashDet verify
     if dataset_root and os.path.isdir(dataset_root) and _HAS_FLASHDET:
-        try:
-            ok = verify_dataset(dataset_root)
-            st.success("Verification **PASSED**") if ok else st.warning("Verification: issues detected")
-        except Exception as e:
-            st.caption(str(e)[:60])
+        vc1, vc2 = st.columns([1, 5])
+        with vc1:
+            do_verify = st.button("Verify", type="primary", key="run_verify_btn", use_container_width=True)
+        with vc2:
+            st.caption(f"Root: `{dataset_root}`")
+        if do_verify or st.session_state.get("_last_verify_ok") is not None:
+            try:
+                ok = verify_dataset(dataset_root)
+                st.session_state["_last_verify_ok"] = ok
+                st.success("Verification **PASSED**") if ok else st.warning("Verification: issues detected")
+            except Exception as e:
+                st.caption(str(e)[:60])
 
         try:
             s = summarize_coco_root(dataset_root)
@@ -519,9 +552,8 @@ def _render_verify():
         st.info(_FLASHDET_INSTALL_MSG)
 
     # Manual count — always show this as fallback
-    EXT = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff")
-    ti = [f for f in os.listdir(train_path) if f.lower().endswith(EXT)] if train_path and os.path.isdir(train_path) else []
-    vi = [f for f in os.listdir(val_path) if f.lower().endswith(EXT)] if val_path and os.path.isdir(val_path) else []
+    ti = [f for f in os.listdir(train_path) if f.lower().endswith(IMG_EXTENSIONS_ALL)] if train_path and os.path.isdir(train_path) else []
+    vi = [f for f in os.listdir(val_path) if f.lower().endswith(IMG_EXTENSIONS_ALL)] if val_path and os.path.isdir(val_path) else []
 
     # Count YOLO labels if present
     train_label_dir = st.session_state.get("train_label_path", "")
@@ -554,8 +586,8 @@ def _render_verify():
     # Sample preview
     if ti:
         with st.expander("Samples"):
-            cols = st.columns(min(4, len(ti)))
-            for i, img_name in enumerate(ti[:4]):
+            cols = st.columns(min(MAX_PREVIEW_COLS, len(ti)))
+            for i, img_name in enumerate(ti[:MAX_PREVIEW_COLS]):
                 with cols[i]:
                     try:
                         st.image(os.path.join(train_path, img_name), caption=img_name[:15], use_container_width=True)
@@ -570,7 +602,7 @@ def _render_verify():
 def _extract_upload(uploaded_file, split):
     import zipfile, tarfile, tempfile
     name = uploaded_file.name
-    out = os.path.join("data", "uploaded", split)
+    out = os.path.join(DEFAULT_DATA_DIR, "uploaded", split)
     os.makedirs(out, exist_ok=True)
     with st.spinner(f"Extracting {name}..."):
         try:
@@ -626,7 +658,10 @@ def _extract_upload(uploaded_file, split):
 
                 # Auto-detect classes from annotation
                 detected_cls = _auto_detect_classes()
-                if detected_cls and not st.session_state.get("class_names", "").strip():
+                _existing_cls = st.session_state.get("class_names", "")
+                if isinstance(_existing_cls, list):
+                    _existing_cls = "\n".join(_existing_cls)
+                if detected_cls and not _existing_cls.strip():
                     st.session_state["class_names"] = "\n".join(detected_cls)
                     st.session_state["num_classes"] = len(detected_cls)
 
@@ -660,9 +695,11 @@ def _convert_to_coco(src, split, src_fmt):
     if not _HAS_FLASHDET:
         st.error(_FLASHDET_INSTALL_MSG)
         return
-    out = os.path.join("data", "uploaded", f"{split}_coco")
+    out = os.path.join(DEFAULT_DATA_DIR, "uploaded", f"{split}_coco")
     cls_names = None
     raw = st.session_state.get("class_names", "")
+    if isinstance(raw, list):
+        raw = "\n".join(raw)
     if raw.strip():
         cls_names = [c.strip() for c in raw.strip().replace(",", "\n").split("\n") if c.strip()]
     with st.spinner("Converting to COCO..."):
@@ -688,11 +725,10 @@ def _convert_to_coco(src, split, src_fmt):
 
 
 def _find_images(base):
-    EXT = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
     best = None
     best_count = 0
     for root, dirs, files in os.walk(base):
-        img_count = len([f for f in files if f.lower().endswith(EXT)])
+        img_count = len([f for f in files if f.lower().endswith(IMG_EXTENSIONS)])
         if img_count > best_count:
             best = root
             best_count = img_count
@@ -700,7 +736,7 @@ def _find_images(base):
             if d.lower() in ("images", "imgs"):
                 c = os.path.join(root, d)
                 for sub_root, _, sub_files in os.walk(c):
-                    sc = len([f for f in sub_files if f.lower().endswith(EXT)])
+                    sc = len([f for f in sub_files if f.lower().endswith(IMG_EXTENSIONS)])
                     if sc > best_count:
                         best = sub_root
                         best_count = sc
@@ -732,7 +768,7 @@ def _use_existing(path, ds_info):
     st.session_state["dataset_output_path"] = path
     name = ds_info.get("name", os.path.basename(path))
     st.session_state["dataset_name"] = name
-    st.session_state["dataset_classes"] = ds_info.get("classes", ds_info.get("cls", 80))
+    st.session_state["dataset_classes"] = ds_info.get("classes", ds_info.get("cls", INFER_NUM_CLASSES))
     if ds_info.get("id"):
         st.session_state["dataset_id"] = ds_info["id"]
     t, v = os.path.join(path, "train"), os.path.join(path, "valid")
@@ -754,7 +790,7 @@ def _run_flashdet_download(dataset_id):
     if not _HAS_FLASHDET:
         st.error(_FLASHDET_INSTALL_MSG)
         return
-    out = st.session_state.get("download_output_dir") or os.path.join("data", dataset_id)
+    out = st.session_state.get("download_output_dir") or os.path.join(DEFAULT_DATA_DIR, dataset_id)
     existing = _dataset_already_downloaded(dataset_id, out)
     if existing:
         st.session_state["dataset_output_path"] = existing
@@ -779,6 +815,10 @@ def _run_flashdet_download(dataset_id):
                 p = os.path.join(result, d)
                 if os.path.isdir(p):
                     st.session_state[k] = p
+            detected_cls = _auto_detect_classes()
+            if detected_cls:
+                st.session_state["class_names"] = "\n".join(detected_cls)
+                st.session_state["num_classes"] = len(detected_cls)
             from flashstudio.utils import flash
             flash(f"Downloaded `{dataset_id}` successfully", "success")
             st.rerun()
@@ -792,7 +832,7 @@ def _run_external_download(ds):
     if not url or "VisDrone" in url:
         st.info(f"Manual: [{url}]({url})")
         return
-    out = os.path.join("data", name.lower().replace(" ", "_").replace("(", "").replace(")", ""))
+    out = os.path.join(DEFAULT_DATA_DIR, name.lower().replace(" ", "_").replace("(", "").replace(")", ""))
     if os.path.isdir(out) and os.listdir(out):
         st.session_state.update({"dataset_output_path": out, "dataset_name": name})
         st.rerun()

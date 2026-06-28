@@ -51,6 +51,11 @@ def main():
     if "current_step" not in st.session_state:
         st.session_state["current_step"] = 0
 
+    # Ensure critical config values are always initialized
+    from flashstudio.utils import DEFAULTS
+    if not st.session_state.get("save_dir"):
+        st.session_state["save_dir"] = DEFAULTS["save_dir"]
+
     # Project system — check if user has an active project
     active_project = get_active_project()
 

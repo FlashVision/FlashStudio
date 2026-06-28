@@ -13,27 +13,23 @@ from plotly.subplots import make_subplots
 from flashstudio.utils.device import has_cuda
 from flashstudio.utils.filesystem import dir_size_str
 from flashstudio.utils.config import build_training_config, apply_training_config
+from flashstudio.constants import (
+    COMPLETE_MARKERS, CKPT_BEST_INFERENCE, CKPT_BEST, CKPT_LAST_INFERENCE,
+    CKPT_LAST, CKPT_FINAL_INFERENCE, CKPT_FINAL_FP16,
+    TRAINING_LOG_CSV, AUTOREFRESH_INTERVAL_MS, format_bytes,
+    IMG_EXTENSIONS, DEFAULT_MODEL_ARCH, DEFAULT_SAVE_DIR,
+    DEFAULT_ARCH_FAMILY, FLASHDET_MODELS,
+)
 
 
-def _get_default_workspace():
-    """Auto-detect workspace: flashdet default is workspace/ in cwd."""
-    save_dir = st.session_state.get("save_dir", "")
-    if save_dir and os.path.isdir(save_dir):
-        return save_dir
-
-    cwd = os.getcwd()
-    candidates = [
-        os.path.join(cwd, "workspace"),
-        os.path.join(cwd, "flashstudio_runs"),
-        os.path.join(cwd, "..", "FlashDet", "workspace"),
-    ]
-    for c in candidates:
-        c = os.path.abspath(c)
-        if os.path.isdir(c):
-            return c
-
-    # Default to workspace/ (flashdet's default output location)
-    return os.path.join(cwd, "workspace")
+def _get_save_dir():
+    """Single source of truth: Model > Advanced > Save Dir. Used across the whole project."""
+    from flashstudio.utils import DEFAULTS
+    val = st.session_state.get("save_dir", "")
+    if not val:
+        val = DEFAULTS["save_dir"]
+        st.session_state["save_dir"] = val
+    return val
 
 
 def _check_training_process():
@@ -77,16 +73,24 @@ def _check_training_process():
 
     st.session_state["training_active"] = False
     st.session_state["training_pid"] = None
+    fh = st.session_state.pop("_log_file_handle", None)
+    if fh and not fh.closed:
+        try:
+            fh.close()
+        except Exception:
+            pass
 
     if error_lines:
         st.session_state["training_status"] = "Failed"
         st.session_state["training_error"] = "\n".join(error_lines[-15:])
     else:
-        complete_markers = ("model_final_inference.pth", "model_final_fp16.pth")
-        save_dir = st.session_state.get("save_dir", "")
+        complete_markers = COMPLETE_MARKERS
+        run_path = st.session_state.get("active_run_path", "")
         completed = any(
-            os.path.isfile(os.path.join(save_dir, m)) for m in complete_markers
-        ) if save_dir else False
+            os.path.isfile(os.path.join(run_path, m)) for m in complete_markers
+        ) if run_path else False
+        if not completed and last_lines:
+            completed = any("Training Complete!" in l for l in last_lines)
         if completed:
             st.session_state["training_status"] = "Complete"
         else:
@@ -106,6 +110,8 @@ def render_training_page():
     if "training_active" not in st.session_state:
         st.session_state["training_active"] = False
         st.session_state["training_status"] = "Not started"
+    if "training_paused" not in st.session_state:
+        st.session_state["training_paused"] = False
 
     # Check if training process crashed
     _check_training_process()
@@ -154,38 +160,68 @@ def render_training_page():
 
 
 def _render_monitor_tab():
-    """Tab: monitor an existing training run from workspace — with rename & delete."""
-    # Always default to workspace/ (flashdet's default output location)
-    default_ws = os.path.join(os.getcwd(), "workspace")
+    """Tab: monitor an existing training run — choose workspace, browse runs."""
+    # Auto-refresh toggle
+    auto_refresh = st.session_state.get("monitor_auto_refresh", False)
+    is_training = st.session_state.get("training_active", False) and not st.session_state.get("training_paused", False)
+    if is_training or auto_refresh:
+        try:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=AUTOREFRESH_INTERVAL_MS, limit=None, key="monitor_autorefresh")
+        except ImportError:
+            pass
 
-    wc1, wc2, wc3 = st.columns([5, 1, 1])
+    # Monitor workspace — defaults to Save Dir from Model > Advanced
+    save_dir = _get_save_dir()
+    if "monitor_workspace" not in st.session_state:
+        st.session_state["monitor_workspace"] = save_dir
+
+    wc1, wc2, wc3, wc4 = st.columns([5, 1, 1, 1])
     with wc1:
-        workspace = st.text_input("Workspace", value=default_ws, key="workspace_path",
+        workspace = st.text_input("Workspace Path", key="monitor_workspace",
                                   label_visibility="collapsed")
     with wc2:
-        st.caption("Workspace")
+        if st.button("Sync", key="mon_sync_btn", use_container_width=True,
+                      help="Sync with Save Dir from Model > Advanced"):
+            st.session_state["monitor_workspace"] = save_dir
+            st.rerun()
     with wc3:
         if st.button("Refresh", key="mon_refresh_btn", use_container_width=True):
             st.rerun()
+    with wc4:
+        st.toggle("Auto", value=is_training, key="monitor_auto_refresh")
 
     if not os.path.isdir(workspace):
         st.warning("Workspace not found")
         _render_run_dashboard(None)
         return
 
-    # Collect all sub-folders recursively (max 2 levels deep)
+    def _is_training_run(folder_path):
+        """Check if a folder looks like a FlashDet training run."""
+        try:
+            entries = os.listdir(folder_path)
+        except OSError:
+            return False
+        has_log = any(f.startswith("train_") and f.endswith(".log") for f in entries)
+        has_csv = TRAINING_LOG_CSV in entries
+        has_ckpt = any(f.endswith(".pth") for f in entries)
+        return has_log or has_csv or has_ckpt
+
+    # Collect training run folders (max 2 levels deep)
     all_folders = []
     for d in sorted(os.listdir(workspace)):
         full = os.path.join(workspace, d)
         if os.path.isdir(full):
-            all_folders.append(d)
-            try:
-                for sd in sorted(os.listdir(full)):
-                    sf = os.path.join(full, sd)
-                    if os.path.isdir(sf):
-                        all_folders.append(os.path.join(d, sd))
-            except OSError:
-                pass
+            if _is_training_run(full):
+                all_folders.append(d)
+            else:
+                try:
+                    for sd in sorted(os.listdir(full)):
+                        sf = os.path.join(full, sd)
+                        if os.path.isdir(sf) and _is_training_run(sf):
+                            all_folders.append(os.path.join(d, sd))
+                except OSError:
+                    pass
 
     if not all_folders:
         st.info("No runs found. Start training first.")
@@ -201,12 +237,12 @@ def _render_monitor_tab():
     labels = []
     for r in all_folders:
         meta = _get_run_meta(os.path.join(workspace, r))
-        parts = [meta["status"].split(" ")[0], r]
+        parts = [r]
         if meta["mAP"]:
             parts.append(f"mAP={meta['mAP']:.3f}")
         if meta["size"]:
             parts.append(meta["size"])
-        labels.append(" ".join(parts))
+        labels.append(" | ".join(parts))
 
     sc1, sc2 = st.columns([7, 1])
     with sc1:
@@ -283,26 +319,34 @@ def _get_run_meta(run_dir: str) -> dict:
         for dirpath, _dirs, files in os.walk(run_dir):
             for f in files:
                 total += os.path.getsize(os.path.join(dirpath, f))
-        if total > 1_073_741_824:
-            meta["size"] = f"{total / 1_073_741_824:.1f} GB"
-        elif total > 1_048_576:
-            meta["size"] = f"{total / 1_048_576:.0f} MB"
-        else:
-            meta["size"] = f"{total / 1024:.0f} KB"
+        meta["size"] = format_bytes(total)
     except OSError:
         pass
 
-    # Status: check for checkpoints (FlashDet uses model_final_* for completion)
-    has_final = (os.path.isfile(os.path.join(run_dir, "model_final_inference.pth"))
-                 or os.path.isfile(os.path.join(run_dir, "model_final_fp16.pth"))
-                 or os.path.isfile(os.path.join(run_dir, "checkpoint_best.pth")))
-    has_last = os.path.isfile(os.path.join(run_dir, "checkpoint_last.pth"))
+    # Status: check for checkpoints
+    has_final = (os.path.isfile(os.path.join(run_dir, CKPT_FINAL_INFERENCE))
+                 or os.path.isfile(os.path.join(run_dir, CKPT_FINAL_FP16)))
+    has_best = (os.path.isfile(os.path.join(run_dir, CKPT_BEST_INFERENCE))
+                or os.path.isfile(os.path.join(run_dir, CKPT_BEST)))
+    has_last = (os.path.isfile(os.path.join(run_dir, CKPT_LAST))
+                or os.path.isfile(os.path.join(run_dir, CKPT_LAST_INFERENCE)))
     log_files = glob_module.glob(os.path.join(run_dir, "train_*.log"))
     has_log = bool(log_files)
-    has_csv = os.path.isfile(os.path.join(run_dir, "training_log.csv"))
+    has_csv = os.path.isfile(os.path.join(run_dir, TRAINING_LOG_CSV))
 
     if has_final:
         meta["status"] = "Complete"
+    elif has_best and has_last:
+        # Check log for "Training Complete!" to distinguish complete vs in-progress
+        completed_in_log = False
+        if log_files:
+            try:
+                with open(max(log_files, key=lambda p: os.path.getsize(p)), "r", encoding="utf-8", errors="replace") as _f:
+                    _tail = _f.readlines()[-5:]
+                completed_in_log = any("Training Complete!" in l for l in _tail)
+            except OSError:
+                pass
+        meta["status"] = "Complete" if completed_in_log else "In Progress"
     elif has_last and (has_log or has_csv):
         meta["status"] = "In Progress"
     elif has_log or has_csv:
@@ -310,66 +354,45 @@ def _get_run_meta(run_dir: str) -> dict:
     else:
         meta["status"] = "Empty"
 
-    # Try to extract model/dataset from log file header
+    # Extract model/epochs from log header (use largest log file)
     if log_files:
         try:
-            with open(log_files[0], "r") as f:
+            best_log = max(log_files, key=lambda p: os.path.getsize(p))
+            with open(best_log, "r", encoding="utf-8", errors="replace") as f:
                 header_lines = f.readlines()[:30]
             for line in header_lines:
-                line_clean = line.strip()
-                # Skip timestamp prefixed lines for model extraction
-                if "Model Size" in line_clean or "model_arch" in line_clean:
-                    # Extract value after last colon
-                    parts = line_clean.rsplit(":", 1)
-                    if len(parts) == 2:
-                        val = parts[1].strip()
-                        if val and len(val) < 30 and not val.startswith("["):
-                            meta["model"] = val
-                if "dataset" in line_clean.lower() and "path" not in line_clean.lower():
-                    parts = line_clean.rsplit(":", 1)
-                    if len(parts) == 2:
-                        val = parts[1].strip()
-                        if val and len(val) < 40 and not val.startswith("["):
-                            meta["dataset"] = val
-                if "epoch" in line_clean.lower() and "/" in line_clean:
-                    match = re.search(r"(\d+)/(\d+)", line_clean)
-                    if match:
-                        meta["epochs"] = match.group(2)
+                lc = line.strip()
+                # FlashDet format: "Model Size: FlashDet-N"
+                if "Model Size:" in lc and not meta["model"]:
+                    meta["model"] = lc.split("Model Size:")[-1].strip()
+                # Older/pico format: "Model: p, Input: (320, 320)"
+                if not meta["model"]:
+                    mm = re.search(r"Model:\s*(\w+),\s*Input:\s*\((\d+),\s*(\d+)\)", lc)
+                    if mm:
+                        meta["model"] = f"{mm.group(1)} ({mm.group(2)}x{mm.group(3)})"
+                # Input size on separate line: "Input Size: (320, 320)"
+                if "Input Size:" in lc and not meta.get("input_size"):
+                    ism = re.search(r"Input Size:\s*\((\d+),\s*(\d+)\)", lc)
+                    if ism:
+                        meta["input_size"] = f"{ism.group(1)}x{ism.group(2)}"
+                # Epochs on own line: "Epochs: 1000"
+                if "Epochs:" in lc and meta["epochs"] == "?":
+                    em = re.search(r"Epochs:\s*(\d+)", lc)
+                    if em:
+                        meta["epochs"] = em.group(1)
+                # Also: "Epochs: 100, Batch: 16, LR: 0.001" (compact format)
+                if "Batch Size:" in lc and not meta.get("batch_size"):
+                    bm = re.search(r"Batch Size:\s*(\d+)", lc)
+                    if bm:
+                        meta["batch_size"] = bm.group(1)
+                # Device
+                if "Device:" in lc and not meta.get("device"):
+                    meta["device"] = lc.split("Device:")[-1].strip()
         except OSError:
             pass
 
-    # Try config.yaml inside run folder
-    config_path = os.path.join(run_dir, "config.yaml")
-    if os.path.isfile(config_path):
-        try:
-            with open(config_path) as f:
-                cfg = yaml.safe_load(f.read())
-            if cfg:
-                if "model" in cfg:
-                    meta["model"] = cfg["model"].get("model_size", cfg["model"].get("variant", ""))
-                if "dataset" in cfg:
-                    meta["dataset"] = cfg["dataset"].get("name", "")
-                if "training" in cfg:
-                    meta["epochs"] = cfg["training"].get("epochs", "?")
-        except Exception:
-            pass
-
-    # Try to get mAP from results.json (FlashDet writes this at training end)
-    results_file = os.path.join(run_dir, "results.json")
-    if os.path.isfile(results_file):
-        try:
-            with open(results_file) as f:
-                results = json.load(f)
-            mAP = results.get("best_mAP50", 0)
-            if mAP > 0:
-                meta["mAP"] = mAP
-            meta["epochs"] = results.get("epochs_trained", meta["epochs"])
-            meta["model"] = meta["model"] or results.get("architecture", "")
-        except (json.JSONDecodeError, OSError):
-            pass
-
     # Fallback: parse training_log.csv for epoch count and mAP
-    csv_path = os.path.join(run_dir, "training_log.csv")
+    csv_path = os.path.join(run_dir, TRAINING_LOG_CSV)
     if os.path.isfile(csv_path) and meta["epochs"] == "?":
         try:
             import csv
@@ -378,8 +401,14 @@ def _get_run_meta(run_dir: str) -> dict:
                 rows = list(reader)
             if rows:
                 meta["epochs"] = len(rows)
-                mAP_vals = [float(r.get("mAP@0.5", 0)) for r in rows
-                            if r.get("mAP@0.5", "").strip()]
+                mAP_vals = []
+                for r in rows:
+                    v = r.get("mAP@0.5") or r.get("val_mAP") or ""
+                    if isinstance(v, str) and v.strip():
+                        try:
+                            mAP_vals.append(float(v))
+                        except ValueError:
+                            pass
                 if mAP_vals and max(mAP_vals) > 0 and not meta["mAP"]:
                     meta["mAP"] = max(mAP_vals)
         except Exception:
@@ -416,7 +445,7 @@ def _get_run_meta(run_dir: str) -> dict:
 
 def _parse_training_csv(run_dir: str):
     """Parse training_log.csv — the primary metrics source from FlashDet."""
-    csv_path = os.path.join(run_dir, "training_log.csv")
+    csv_path = os.path.join(run_dir, TRAINING_LOG_CSV)
     if not os.path.isfile(csv_path):
         return None
 
@@ -444,7 +473,7 @@ def _parse_training_csv(run_dir: str):
                 val_loss = row.get("val_loss", "")
                 history["val_loss"].append(float(val_loss) if val_loss else None)
 
-                mAP = row.get("mAP@0.5", "")
+                mAP = row.get("mAP@0.5") or row.get("val_mAP") or ""
                 history["mAP50"].append(float(mAP) if mAP else None)
 
                 for key in ("train_box", "train_cls", "train_l1", "val_box", "val_cls", "val_l1"):
@@ -468,53 +497,47 @@ def _parse_training_csv(run_dir: str):
     history["val_loss"] = val_loss_clean
     history["mAP50"] = mAP50_clean
 
-    # Fill in metadata from results.json if available
-    results_path = os.path.join(run_dir, "results.json")
-    if os.path.isfile(results_path):
-        try:
-            with open(results_path) as f:
-                results = json.load(f)
-            history["total_epochs"] = results.get("total_epochs", len(history["epochs"]))
-            history["model_info"] = results.get("architecture", "")
-            tc = results.get("training_config", {})
-            history["batch_size"] = tc.get("batch_size", 0)
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    if not history["total_epochs"]:
-        history["total_epochs"] = len(history["epochs"])
-
-    # Fill metadata from log header
+    # Fill metadata from log header FIRST — log has authoritative total_epochs
     log_file = _find_log_file(run_dir)
     if log_file:
         try:
             with open(log_file, "r") as f:
                 header_lines = f.readlines()[:30]
             for line in header_lines:
-                if "Model Size:" in line:
-                    history["model_info"] = line.split("Model Size:")[-1].strip()
-                model_m = re.search(r"Model: (\w+), Input: \((\d+), (\d+)\)", line)
-                if model_m and not history["model_info"]:
-                    history["model_info"] = f"{model_m.group(1)} ({model_m.group(2)}x{model_m.group(3)})"
-                if "Device:" in line:
-                    history["device"] = line.split("Device:")[-1].strip()
-                if "Classes" in line and ":" in line:
-                    m = re.search(r"Classes \((\d+)\): \[(.+)\]", line)
+                lc = line.strip()
+                if "Model Size:" in lc:
+                    history["model_info"] = lc.split("Model Size:")[-1].strip()
+                if not history["model_info"]:
+                    model_m = re.search(r"Model:\s*(\w+),\s*Input:\s*\((\d+),\s*(\d+)\)", lc)
+                    if model_m:
+                        history["model_info"] = f"{model_m.group(1)} ({model_m.group(2)}x{model_m.group(3)})"
+                if "Device:" in lc:
+                    history["device"] = lc.split("Device:")[-1].strip()
+                if "Classes" in lc and ":" in lc:
+                    m = re.search(r"Classes \((\d+)\):\s*\[(.+)\]", lc)
                     if m:
-                        history["classes"] = [c.strip().strip("'") for c in m.group(2).split(",")]
-                if "Epochs:" in line:
-                    m = re.search(r"Epochs:\s*(\d+)", line)
-                    if m and not history["total_epochs"]:
+                        history["classes"] = [c.strip().strip("'").strip('"') for c in m.group(2).split(",")]
+                if "Epochs:" in lc:
+                    m = re.search(r"Epochs:\s*(\d+)", lc)
+                    if m:
                         history["total_epochs"] = int(m.group(1))
-                    bm = re.search(r"Batch:\s*(\d+)", line)
+                    bm = re.search(r"Batch:\s*(\d+)", lc)
                     if bm and not history["batch_size"]:
                         history["batch_size"] = int(bm.group(1))
-                if "Batch Size:" in line:
-                    m = re.search(r"Batch Size:\s*(\d+)", line)
+                if "Batch Size:" in lc:
+                    m = re.search(r"Batch Size:\s*(\d+)", lc)
                     if m and not history["batch_size"]:
                         history["batch_size"] = int(m.group(1))
+                if "Learning Rate:" in lc and not history.get("initial_lr"):
+                    m = re.search(r"Learning Rate:\s*([\d.e+-]+)", lc)
+                    if m:
+                        history["initial_lr"] = float(m.group(1))
         except OSError:
             pass
+
+    # Fallback: if log didn't provide total_epochs, use the number of CSV rows
+    if not history["total_epochs"]:
+        history["total_epochs"] = len(history["epochs"])
 
     return history if history["epochs"] else None
 
@@ -651,14 +674,18 @@ def _parse_training_log(log_path: str):
             if ema_m:
                 history["ema_decay"].append(float(ema_m.group(1)))
 
-        # Val Loss line:  Val Loss: 561.98 (loss_total: ..., o2m_cls: X, o2m_box: Y, ..., o2o_cls: A, o2o_box: B, ...) | mAP@0.5: M
+        # Val Loss line — two formats:
+        #   1. Val Loss: 561.98 (loss_total: ..., o2m_cls: X, ...) | mAP@0.5: M  (with sub-losses)
+        #   2. Val Loss: 561.98 | mAP@0.5: M  (without sub-losses)
         val_m = re.search(r"Val Loss:\s*([\d.]+)\s*\((.+?)\)\s*\|\s*mAP@0\.5:\s*([\d.]+)", line)
+        val_simple = None
+        if not val_m:
+            val_simple = re.search(r"Val Loss:\s*([\d.]+).*?mAP@0\.5:\s*([\d.]+)", line)
         if val_m:
             history["val_loss"].append(float(val_m.group(1)))
             history["mAP50"].append(float(val_m.group(3)))
 
             detail = val_m.group(2)
-            # Extract loss_total as train loss
             lt = re.search(r"loss_total:\s*([\d.]+)", detail)
             if lt:
                 while len(history["train_loss"]) < current_epoch:
@@ -666,7 +693,6 @@ def _parse_training_log(log_path: str):
                 if current_epoch > 0:
                     history["train_loss"][current_epoch - 1] = float(lt.group(1))
 
-            # Extract sub-losses
             for key, pattern in [
                 ("o2m_cls", r"o2m_cls:\s*([\d.]+)"),
                 ("o2m_box", r"o2m_box:\s*([\d.]+)"),
@@ -678,32 +704,45 @@ def _parse_training_log(log_path: str):
                     history[key].append(None)
                 if sm and current_epoch > 0:
                     history[key][current_epoch - 1] = float(sm.group(1))
+        elif val_simple:
+            history["val_loss"].append(float(val_simple.group(1)))
+            history["mAP50"].append(float(val_simple.group(2)))
 
         # Also try: Validation - Loss: X | mAP@0.5: Y (older format)
-        if not val_m:
+        if not val_m and not val_simple:
             alt_val = re.search(r"Validation.*Loss:\s*([\d.]+).*mAP@0\.5:\s*([\d.]+)", line)
             if alt_val:
                 history["val_loss"].append(float(alt_val.group(1)))
                 history["mAP50"].append(float(alt_val.group(2)))
 
-        # Batch-level loss: Epoch [N] Batch [B/T] Loss: X (older format)
-        batch_m = re.search(
-            r"Epoch \[(\d+)\] Batch \[\d+/\d+\] Loss: ([\d.]+).*?"
-            r"o2m_cls: ([\d.]+).*?o2m_box: ([\d.]+).*?o2o_cls: ([\d.]+).*?o2o_box: ([\d.]+)",
-            line
-        )
+        # Batch-level loss: Epoch [N] Batch [B/T] Loss: X (loss_total: Y, ...)
+        batch_m = re.search(r"Epoch \[(\d+)\] Batch \[\d+/\d+\] Loss:\s*([\d.]+)", line)
         if batch_m:
             ep = int(batch_m.group(1))
+            raw_loss = float(batch_m.group(2))
+            # Use loss_total if available (more meaningful), else use raw Loss
+            lt = re.search(r"loss_total:\s*([\d.]+)", line)
+            loss_val = float(lt.group(1)) if lt else raw_loss
             while len(history["train_loss"]) < ep:
                 history["train_loss"].append(None)
-            history["train_loss"][ep - 1] = float(batch_m.group(2))
-            for i, key in enumerate(["o2m_cls", "o2m_box", "o2o_cls", "o2o_box"], 3):
+            history["train_loss"][ep - 1] = loss_val
+            # Extract sub-losses
+            for key, pattern in [
+                ("o2m_cls", r"o2m_cls:\s*([\d.]+)"),
+                ("o2m_box", r"o2m_box:\s*([\d.]+)"),
+                ("o2o_cls", r"o2o_cls:\s*([\d.]+)"),
+                ("o2o_box", r"o2o_box:\s*([\d.]+)"),
+            ]:
+                sm = re.search(pattern, line)
                 while len(history[key]) < ep:
                     history[key].append(None)
-                history[key][ep - 1] = float(batch_m.group(i))
+                if sm and ep > 0:
+                    history[key][ep - 1] = float(sm.group(1))
 
-        # Epoch time
+        # Epoch time — FlashDet logs "Time: Xs" at end of batch lines
         time_m = re.search(r"Epoch time:\s*([\d.]+)s", line)
+        if not time_m:
+            time_m = re.search(r"Time:\s*([\d.]+)s\s*$", line)
         if time_m:
             history["epoch_time"].append(float(time_m.group(1)))
 
@@ -732,13 +771,15 @@ def _render_metrics_from_history(history, run_dir):
             val = f"{losses[-1]:.1f}" if losses else "—"
             st.metric("Train Loss", val)
         with cols[2]:
-            val = f"{history['val_loss'][-1]:.2f}" if history.get("val_loss") else "—"
+            vl = [x for x in history.get("val_loss", []) if x is not None]
+            val = f"{vl[-1]:.2f}" if vl else "—"
             st.metric("Val Loss", val)
         with cols[3]:
-            val = f"{history['mAP50'][-1]:.4f}" if history.get("mAP50") else "—"
+            mp = [x for x in history.get("mAP50", []) if x is not None]
+            val = f"{mp[-1]:.4f}" if mp else "—"
             st.metric("mAP@0.5", val)
         with cols[4]:
-            best = f"{max(history['mAP50']):.4f}" if history.get("mAP50") else "—"
+            best = f"{max(mp):.4f}" if mp else "—"
             st.metric("Best mAP", best)
         with cols[5]:
             lr_val = f"{history['lr'][-1]:.2e}" if history.get("lr") else "—"
@@ -751,6 +792,17 @@ def _render_metrics_from_history(history, run_dir):
 
         if n_epochs < total:
             st.progress(n_epochs / max(total, 1))
+            epoch_times = history.get("epoch_time", [])
+            if epoch_times:
+                avg_time = sum(epoch_times) / len(epoch_times)
+                remaining = (total - n_epochs) * avg_time
+                if remaining > 3600:
+                    eta = f"~{remaining / 3600:.1f}h"
+                elif remaining > 60:
+                    eta = f"~{remaining / 60:.0f}m"
+                else:
+                    eta = f"~{remaining:.0f}s"
+                st.caption(f"ETA: {eta} ({avg_time:.1f}s/epoch)")
     else:
         for col in cols:
             with col:
@@ -865,7 +917,7 @@ def _render_curves(history, run_dir):
 
 
 def _render_visualizations(run_dir):
-    """Show visualization images from FlashDet output — checks multiple possible locations."""
+    """Show visualization images in a queue — latest 3, oldest drops off."""
     img_dirs = [
         os.path.join(run_dir, "visualizations"),
         os.path.join(run_dir, "plots"),
@@ -875,40 +927,25 @@ def _render_visualizations(run_dir):
     for d in img_dirs:
         if os.path.isdir(d):
             for f in sorted(os.listdir(d)):
-                if f.lower().endswith((".jpg", ".jpeg", ".png")) and f != "latest_visualization.jpg":
+                if f.lower().endswith(IMG_EXTENSIONS) and f != "latest_visualization.jpg":
                     all_images.append(os.path.join(d, f))
 
-    # Also check for any .png/.jpg directly in run_dir (FlashDet may save plots here)
-    for f in sorted(os.listdir(run_dir)):
-        fp = os.path.join(run_dir, f)
-        if os.path.isfile(fp) and f.lower().endswith((".png", ".jpg", ".jpeg")):
-            all_images.append(fp)
-
     if not all_images:
-        st.info("No visualization images found in this run. FlashDet saves plots in the `plots/` directory when available.")
-        # Show checkpoint summary as alternative
-        pth_files = [f for f in os.listdir(run_dir) if f.endswith(".pth")]
-        if pth_files:
-            st.caption(f"Checkpoints found: {len(pth_files)}")
-            for f in sorted(pth_files):
-                sz = os.path.getsize(os.path.join(run_dir, f))
-                st.caption(f"  {f} ({sz / 1024 / 1024:.1f} MB)")
+        st.info("No visualization images found. FlashDet saves visualizations in the `visualizations/` directory during training.")
         return
 
-    # Show latest first
-    latest = os.path.join(run_dir, "visualizations", "latest_visualization.jpg")
-    if os.path.isfile(latest):
-        st.image(latest, caption="Latest Visualization", use_container_width=True)
+    # Queue: keep only the 3 most recent (sorted by name → last 3)
+    queue = all_images[-3:]
 
-    st.caption(f"{len(all_images)} images")
-    for i in range(0, len(all_images), 3):
-        cols = st.columns(3)
-        for j, col in enumerate(cols):
-            idx = i + j
-            if idx < len(all_images):
-                with col:
-                    st.image(all_images[idx], caption=os.path.basename(all_images[idx])[:25],
-                             use_container_width=True)
+    st.caption(f"Latest {len(queue)} of {len(all_images)} visualizations")
+
+    cols = st.columns(len(queue))
+    for i, col in enumerate(cols):
+        with col:
+            fname = os.path.basename(queue[i])
+            # Extract epoch/batch from filename like "epoch0060_batch0160.jpg"
+            label = fname.replace(".jpg", "").replace(".png", "").replace("_", " ").title()
+            st.image(queue[i], caption=label, use_container_width=True)
 
 
 def _render_gt_verification(run_dir):
@@ -981,8 +1018,8 @@ def _render_gt_verification(run_dir):
     train_imgs = re.search(r"train.*?Images:\s*(\d+)", ver_block, re.DOTALL)
     train_ann = re.search(r"train.*?Annotations:\s*(\d+)", ver_block, re.DOTALL)
     train_found = re.search(r"train.*?Files found:\s*(\d+)/(\d+)", ver_block, re.DOTALL)
-    val_imgs = re.search(r"valid.*?Images:\s*(\d+)", ver_block, re.DOTALL)
-    val_ann = re.search(r"valid.*?Annotations:\s*(\d+)", ver_block, re.DOTALL)
+    val_imgs = re.search(r"(?:valid|val).*?Images:\s*(\d+)", ver_block, re.DOTALL)
+    val_ann = re.search(r"(?:valid|val).*?Annotations:\s*(\d+)", ver_block, re.DOTALL)
 
     # Extract classes from header
     cls_m = re.search(r"Classes \((\d+)\): \[(.+?)\]", log_content)
@@ -991,7 +1028,7 @@ def _render_gt_verification(run_dir):
 
     # Check if all passed
     train_ok = "✓ train" in ver_block
-    val_ok = "✓ valid" in ver_block
+    val_ok = "✓ valid" in ver_block or "✓ val" in ver_block
     if train_ok and val_ok:
         st.success("Dataset Verification: PASSED")
     elif train_ok:
@@ -1053,7 +1090,7 @@ def _render_full_log(log_path):
         st.info("No log found.")
         return
 
-    with open(log_path) as f:
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
     lines = content.strip().split("\n") if content.strip() else []
 
@@ -1115,33 +1152,23 @@ def _render_checkpoints(run_dir):
     else:
         st.info("No files.")
 
-    results_path = os.path.join(run_dir, "results.json")
-    if os.path.isfile(results_path):
-        with open(results_path) as f:
-            results = json.load(f)
-        st.caption("Training Results")
-        r1, r2, r3, r4, r5, r6 = st.columns(6)
-        with r1:
-            st.metric("Architecture", results.get("architecture", "—"))
-        with r2:
-            st.metric("Epochs", f"{results.get('epochs_trained', '?')}/{results.get('total_epochs', '?')}")
-        with r3:
-            st.metric("Best mAP@50", f"{results.get('best_mAP50', 0):.4f}")
-        with r4:
-            st.metric("Best Val Loss", f"{results.get('best_val_loss', 0):.2f}")
-        with r5:
-            st.metric("Params", f"{results.get('model_params_M', 0):.2f}M")
-        with r6:
-            st.metric("Input Size", results.get("input_size", "?"))
-
-        tc = results.get("training_config", {})
-        if tc:
-            with st.expander("Training Config", expanded=False):
-                config_cols = st.columns(4)
-                items = list(tc.items())
-                for i, (k, v) in enumerate(items):
-                    with config_cols[i % 4]:
-                        st.text(f"{k}: {v}")
+    # Show training summary from log if complete
+    log_file = _find_log_file(run_dir)
+    if log_file:
+        try:
+            with open(log_file, "r", encoding="utf-8", errors="replace") as _lf:
+                _tail = _lf.readlines()[-10:]
+            for _ln in _tail:
+                bm = re.search(r"Best mAP@0\.5:\s*([\d.]+)\s*\|\s*Best Loss:\s*([\d.]+)", _ln)
+                if bm:
+                    rc1, rc2 = st.columns(2)
+                    with rc1:
+                        st.metric("Best mAP@0.5", bm.group(1))
+                    with rc2:
+                        st.metric("Best Val Loss", bm.group(2))
+                    break
+        except OSError:
+            pass
 
 
 def _file_type(filename):
@@ -1186,96 +1213,70 @@ def _file_type(filename):
 def _render_start_tab():
     """Tab: launch a new training run — professional step-based layout."""
 
-    # ─── STEP 1: Experiment Folder ───
-    # runs_root is always the workspace root — never a run subfolder
-    runs_root = os.path.join(os.getcwd(), "workspace")
+    # Save Dir from Model > Advanced is the output path
+    runs_root = _get_save_dir()
+    if runs_root:
+        os.makedirs(runs_root, exist_ok=True)
 
-    os.makedirs(runs_root, exist_ok=True)
+    # Auto-generate run name if not set (user can edit in Config section)
+    if "run_name" not in st.session_state:
+        st.session_state["run_name"] = _generate_run_name()
 
-    existing_folders = sorted(
-        [d for d in os.listdir(runs_root) if os.path.isdir(os.path.join(runs_root, d))],
-        key=lambda d: os.path.getmtime(os.path.join(runs_root, d)),
-        reverse=True,
-    )
+    # Step 1: Create Run — must be done before training can start
+    run_created = st.session_state.get("run_created", False)
+    nc = st.session_state.get("num_classes", 0)
 
     with st.container(border=True):
-        st.markdown("#### 1. Experiment")
-        nc1, nc2, nc3 = st.columns([3, 3, 1])
-        with nc1:
-            default_name = _generate_run_name()
-            new_folder_name = st.text_input("New", value=st.session_state.get("run_name", default_name),
-                                            key="new_workflow_folder_name", label_visibility="collapsed")
-        with nc3:
-            if st.button("Create", key="btn_create_wf", use_container_width=True, type="primary"):
+        st.markdown("#### 1. Create Run")
+        st.text_input("Run Name", key="run_name")
+        run_name = st.session_state.get("run_name", "untitled_run")
+        full_run_path = os.path.join(runs_root, run_name)
+        st.caption(f"Output: `{full_run_path}`")
+
+        if not run_created:
+            if st.button("Create Run", key="btn_create_run", use_container_width=True, type="primary"):
                 from flashstudio.utils import flash
-                folder_path = os.path.join(runs_root, new_folder_name)
-                if not os.path.exists(folder_path):
-                    os.makedirs(folder_path, exist_ok=True)
-                    st.session_state["run_name"] = new_folder_name
-                    st.session_state["active_workflow_folder"] = new_folder_name
-                    flash(f"Folder `{new_folder_name}` created", "success")
+                if not run_name.strip():
+                    flash("Run name cannot be empty", "error")
                     st.rerun()
                 else:
-                    flash(f"Folder `{new_folder_name}` already exists", "warning")
+                    os.makedirs(full_run_path, exist_ok=True)
+                    st.session_state["run_created"] = True
+                    st.session_state["save_dir_run"] = full_run_path
+                    flash(f"Run `{run_name}` created", "success")
                     st.rerun()
+        else:
+            st.success(f"Run: **{run_name}**")
 
-        with nc2:
-            if existing_folders:
-                active_folder = st.session_state.get("active_workflow_folder", "")
-                folder_labels = [f"{f} ({_get_folder_size_str(os.path.join(runs_root, f))})"
-                                 + (" ←" if f == active_folder else "") for f in existing_folders]
-                sel_idx = st.selectbox("Existing", range(len(existing_folders)),
-                                       format_func=lambda i: folder_labels[i], key="sel_existing_wf",
-                                       label_visibility="collapsed")
-                bc1, bc2, bc3 = st.columns(3)
-                with bc1:
-                    if st.button("Use", key="btn_use_wf", help="Use this folder", use_container_width=True):
-                        from flashstudio.utils import flash
-                        st.session_state["active_workflow_folder"] = existing_folders[sel_idx]
-                        st.session_state["run_name"] = existing_folders[sel_idx]
-                        flash(f"Using folder `{existing_folders[sel_idx]}`", "success")
-                        st.rerun()
-                with bc2:
-                    if st.button("Rename", key="btn_rename_wf", help="Rename folder", use_container_width=True):
-                        st.session_state["wf_rename_target"] = existing_folders[sel_idx]
-                with bc3:
-                    if st.button("Delete", key="btn_del_wf", help="Delete folder", use_container_width=True):
-                        st.session_state["wf_delete_target"] = existing_folders[sel_idx]
-
-        _render_folder_dialogs(runs_root, existing_folders)
-
-    # Determine active path
-    active_folder = st.session_state.get("active_workflow_folder", "")
-    if not active_folder and existing_folders:
-        active_folder = existing_folders[0]
-        st.session_state["active_workflow_folder"] = active_folder
-    run_name = active_folder or st.session_state.get("run_name", "untitled_run")
-    st.session_state["run_name"] = run_name
+    # Resolve full run path
+    run_name = st.session_state.get("run_name", "untitled_run")
     full_run_path = os.path.join(runs_root, run_name)
 
-    # Config overview — single row
-    nc = st.session_state.get("num_classes", 0)
+    # Step 2: Config + Launch — only visible after run is created
+    if not run_created:
+        st.info("Create a run first to configure and start training.")
+        return
+
     with st.container(border=True):
         st.markdown("#### 2. Config")
-        cc1, cc2, cc3, cc4, cc5, cc6, cc7, cc8 = st.columns(8)
+        cc1, cc2, cc3, cc4, cc5, cc6, cc7 = st.columns(7)
         with cc1:
-            st.metric("Model", st.session_state.get("model_arch", "Pico").replace("FlashDet-", ""))
+            from flashstudio.utils import get_state
+            st.metric("Model", get_state("model_arch").replace("FlashDet-", ""))
         with cc2:
             st.metric("Dataset", (st.session_state.get("dataset_name") or "—")[:8])
         with cc3:
             st.metric("Classes", nc if nc else "—")
         with cc4:
-            st.metric("Epochs", st.session_state.get("epochs", 100))
+            st.metric("Epochs", get_state("epochs"))
         with cc5:
-            st.metric("Batch", st.session_state.get("batch_size", 16))
+            st.metric("Batch", get_state("batch_size"))
         with cc6:
-            st.metric("LR", f"{st.session_state.get('lr', 0.001):.1e}")
+            st.metric("LR", f"{get_state('lr'):.1e}")
         with cc7:
             st.metric("Device", "GPU" if has_cuda() else "CPU")
-        with cc8:
-            st.metric("Output", run_name[:8])
 
-    # Pre-flight + Launch — single row
+    # Step 3: Pre-flight + Launch
     with st.container(border=True):
         st.markdown("#### 3. Launch")
         checks = _run_preflight_checks()
@@ -1297,7 +1298,7 @@ def _render_start_tab():
                 if st.button("Start", use_container_width=True, type="primary",
                              key="btn_start_training", disabled=not all_ok):
                     st.session_state.update({"training_active": True, "training_status": "Running",
-                                             "training_paused": False, "save_dir": full_run_path})
+                                             "training_paused": False, "active_run_path": full_run_path})
                     _start_training()
             else:
                 if st.button("Stop", use_container_width=True, key="btn_stop_training"):
@@ -1429,8 +1430,8 @@ def _render_config_file_dialog(run_path: str):
                     except Exception as e:
                         st.error(str(e)[:40])
             else:
-                save_dir = st.session_state.get("save_dir", "")
-                parent = os.path.dirname(save_dir) if save_dir else ""
+                sd = _get_save_dir()
+                parent = sd if os.path.isdir(sd) else ""
                 found = [(d, os.path.join(parent, d, "config.yaml"))
                          for d in (os.listdir(parent) if parent and os.path.isdir(parent) else [])
                          if os.path.isfile(os.path.join(parent, d, "config.yaml"))]
@@ -1454,7 +1455,7 @@ _get_folder_size_str = dir_size_str
 def _generate_run_name() -> str:
     """Generate a descriptive default run name."""
     from datetime import datetime
-    arch = st.session_state.get("model_arch", "FlashDet-Pico")
+    arch = st.session_state.get("model_arch", DEFAULT_MODEL_ARCH)
     size_code = arch.split("-")[-1].lower()[:4] if "-" in arch else "det"
     dataset = st.session_state.get("dataset_name", "")
     ds_code = dataset.split("(")[0].strip().replace(" ", "")[:8].lower() if dataset else "custom"
@@ -1487,9 +1488,11 @@ def _run_preflight_checks() -> list:
     # 3. Classes
     nc = st.session_state.get("num_classes", 0)
     cls_names = st.session_state.get("class_names", "")
+    if isinstance(cls_names, list):
+        cls_names = "\n".join(cls_names)
     if nc and nc > 0:
         checks.append(("Classes", True, f"{nc} classes"))
-    elif cls_names.strip():
+    elif isinstance(cls_names, str) and cls_names.strip():
         n = len([c for c in cls_names.strip().split("\n") if c.strip()])
         checks.append(("Classes", True, f"{n} classes"))
     else:
@@ -1510,7 +1513,7 @@ def _run_preflight_checks() -> list:
         checks[-1] = ("GPU", True, "CPU mode")
 
     # 5. Disk space
-    save_dir = st.session_state.get("save_dir", os.getcwd())
+    save_dir = _get_save_dir()
     try:
         stat = os.statvfs(os.path.dirname(save_dir) if not os.path.isdir(save_dir) else save_dir)
         free_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
@@ -1527,7 +1530,7 @@ def _run_preflight_checks() -> list:
 def _render_clean_workspace_dialog():
     """Compact workspace cleanup."""
     with st.container(border=True):
-        parent_dir = os.path.join(os.getcwd(), "workspace")
+        parent_dir = DEFAULT_SAVE_DIR
 
         if not os.path.isdir(parent_dir):
             st.info("Nothing to clean.")
@@ -1537,7 +1540,8 @@ def _render_clean_workspace_dialog():
             return
 
         runs = [{"name": d, "path": os.path.join(parent_dir, d), "size": _get_dir_size(os.path.join(parent_dir, d)),
-                 "has_best": os.path.isfile(os.path.join(parent_dir, d, "checkpoint_best.pth"))}
+                 "has_best": (os.path.isfile(os.path.join(parent_dir, d, "checkpoint_best.pth"))
+                              or os.path.isfile(os.path.join(parent_dir, d, "model_best_inference.pth")))}
                 for d in sorted(os.listdir(parent_dir)) if os.path.isdir(os.path.join(parent_dir, d))]
         if not runs:
             st.info("No runs."); return
@@ -1578,12 +1582,14 @@ def _render_clean_workspace_dialog():
 def _render_resume_dialog():
     """Compact resume dialog."""
     with st.container(border=True):
-        parent_dir = os.path.join(os.getcwd(), "workspace")
+        parent_dir = DEFAULT_SAVE_DIR
         resumable = []
         if os.path.isdir(parent_dir):
             for d in sorted(os.listdir(parent_dir), reverse=True):
                 full = os.path.join(parent_dir, d)
-                ckpt = os.path.join(full, "checkpoint_last.pth")
+                ckpt = os.path.join(full, CKPT_LAST)
+                if not os.path.isfile(ckpt):
+                    ckpt = os.path.join(full, "model_last_inference.pth")
                 if os.path.isdir(full) and os.path.isfile(ckpt):
                     resumable.append({"name": d, "path": full, "ckpt": ckpt})
         if not resumable:
@@ -1599,7 +1605,7 @@ def _render_resume_dialog():
                 for r in resumable:
                     if r["name"] == selected:
                         st.session_state.update({"resume_training": True, "resume_path": r["ckpt"],
-                                                 "save_dir": r["path"], "training_active": True,
+                                                 "active_run_path": r["path"], "training_active": True,
                                                  "training_status": "Resuming", "show_resume_dialog": False})
                         _start_training(); break
         with rc3:
@@ -1613,9 +1619,9 @@ _get_dir_size = dir_size_str
 def _cleanup_run_keep_best(run_dir: str) -> int:
     """Remove non-essential files from a run, keeping final/best models and results."""
     keep = {
-        "checkpoint_best.pth", "training_log.csv",
-        "model_best_inference.pth", "model_best_fp16.pth",
-        "model_final_inference.pth", "model_final_fp16.pth",
+        CKPT_BEST, TRAINING_LOG_CSV,
+        CKPT_BEST_INFERENCE, "model_best_fp16.pth",
+        CKPT_FINAL_INFERENCE, CKPT_FINAL_FP16,
         "model.onnx", "model.onnx.data",
     }
     removed = 0
@@ -1658,6 +1664,13 @@ def _stop_training():
     st.session_state["training_status"] = "Stopped"
     st.session_state["training_paused"] = False
     st.session_state["training_pid"] = None
+    # Close the log file handle
+    fh = st.session_state.pop("_log_file_handle", None)
+    if fh and not fh.closed:
+        try:
+            fh.close()
+        except Exception:
+            pass
     st.rerun()
 
 
@@ -1753,7 +1766,10 @@ def _start_training():
         return
 
     # Auto-detect classes from annotation if not already set
-    if not st.session_state.get("class_names", "").strip():
+    _cls_raw = st.session_state.get("class_names", "")
+    if isinstance(_cls_raw, list):
+        _cls_raw = "\n".join(_cls_raw)
+    if not _cls_raw.strip():
         ann_file = os.path.join(train_images, "_annotations.coco.json")
         if not os.path.isfile(ann_file):
             json_files = [f for f in os.listdir(train_images) if f.endswith(".json")] if os.path.isdir(train_images) else []
@@ -1782,6 +1798,8 @@ def _start_training():
             output_dir = parent_dir + "_coco"
             class_names = None
             raw_names = st.session_state.get("class_names", "")
+            if isinstance(raw_names, list):
+                raw_names = "\n".join(raw_names)
             if raw_names.strip():
                 class_names = [c.strip() for c in raw_names.strip().split("\n") if c.strip()]
 
@@ -1862,14 +1880,11 @@ def _run_flashdet_training():
     import sys
     import textwrap
 
-    size_map = {
-        "FlashDet-Pico": "p", "FlashDet-Nano": "n", "FlashDet-Small": "s",
-        "FlashDet-Medium": "m", "FlashDet-Large": "l", "FlashDet-X": "x",
-    }
+    size_map = {name: info["size"] for name, info in FLASHDET_MODELS.items()}
 
-    arch_family = st.session_state.get("arch_family", "FlashDet (recommended)")
-    model_arch = st.session_state.get("model_arch", "FlashDet-Pico")
-    save_dir = st.session_state.get("save_dir", os.path.join(os.getcwd(), "workspace", "flashdet_output"))
+    arch_family = st.session_state.get("arch_family", DEFAULT_ARCH_FAMILY)
+    model_arch = st.session_state.get("model_arch", DEFAULT_MODEL_ARCH)
+    save_dir = st.session_state.get("active_run_path", os.path.join(_get_save_dir(), st.session_state.get("run_name", "untitled_run")))
 
     device = "cpu"
     try:
@@ -1894,17 +1909,18 @@ def _run_flashdet_training():
     elif "YOLOX" in arch_family:
         architecture = "yolox"
 
-    # Map session state to Trainer API (only parameters accepted by flashdet.Trainer)
+    from flashstudio.utils import get_state
+    # Map session state to Trainer API
     model_size = size_map.get(model_arch, "n")
-    epochs = st.session_state.get("epochs", 100)
-    batch_size = st.session_state.get("batch_size", 16)
-    lr = st.session_state.get("lr", 1e-3)
-    workers = st.session_state.get("num_workers", 4)
+    epochs = get_state("epochs")
+    batch_size = get_state("batch_size")
+    lr = get_state("lr")
+    workers = get_state("num_workers")
     amp = st.session_state.get("amp", True) and device == "cuda"
     mosaic = st.session_state.get("aug_mosaic", True)
     mixup = st.session_state.get("aug_mixup", False)
     copy_paste = st.session_state.get("aug_copypaste", False)
-    warmup_epochs = st.session_state.get("warmup_epochs", 3)
+    warmup_epochs = get_state("warmup_epochs")
     grad_accum = st.session_state.get("grad_accum", 1)
     patience = st.session_state.get("patience", 50)
     input_size = st.session_state.get("img_size", 320)
@@ -1962,52 +1978,56 @@ def _run_flashdet_training():
         if "PicoBackbone" in pico_bb or "RepNeXt" in pico_bb:
             backbone_type = "pico_v2"
 
-    finetune_arg = f'"{finetune_path}"' if finetune_path else "None"
-    resume_arg = f'"{resume_ckpt}"' if resume_ckpt else "None"
-    class_file_arg = f'"{class_file}"' if class_file else "None"
+    trainer_kwargs = {
+        "model_size": model_size,
+        "architecture": architecture,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "lr": lr,
+        "workers": workers,
+        "device": device,
+        "save_dir": save_dir,
+        "train_images": train_images,
+        "val_images": val_images,
+        "warmup_epochs": warmup_epochs,
+        "amp": amp,
+        "mosaic": mosaic,
+        "mixup": mixup,
+        "copy_paste": copy_paste,
+        "lora": lora,
+        "lora_variant": lora_variant,
+        "lora_rank": lora_rank,
+        "lora_alpha": lora_alpha,
+        "lora_dropout": lora_dropout,
+        "lora_targets": lora_targets,
+        "qlora": qlora,
+        "qlora_dtype": qlora_dtype,
+        "chunked_loss": chunked_loss,
+        "chunk_size": chunk_size,
+        "grad_accum": grad_accum,
+        "patience": patience,
+        "input_size": input_size,
+        "activation_checkpointing": activation_checkpointing,
+        "activation_offloading": activation_offloading,
+        "optimizer_in_bwd": optimizer_in_bwd,
+        "use_8bit_optimizer": use_8bit_optimizer,
+        "compile": compile_model,
+        "multi_gpu": multi_gpu,
+        "backbone_type": backbone_type,
+    }
+    if finetune_path:
+        trainer_kwargs["finetune"] = finetune_path
+    if resume_ckpt:
+        trainer_kwargs["resume"] = resume_ckpt
+    if class_file:
+        trainer_kwargs["class_file"] = class_file
 
+    kwargs_json = json.dumps(trainer_kwargs)
     train_script = textwrap.dedent(f"""\
+        import json
         from flashdet import Trainer
-        trainer = Trainer(
-            model_size="{model_size}",
-            architecture="{architecture}",
-            epochs={epochs},
-            batch_size={batch_size},
-            lr={lr},
-            workers={workers},
-            device="{device}",
-            save_dir="{save_dir}",
-            train_images="{train_images}",
-            val_images="{val_images}",
-            warmup_epochs={warmup_epochs},
-            amp={amp},
-            mosaic={mosaic},
-            mixup={mixup},
-            copy_paste={copy_paste},
-            lora={lora},
-            lora_variant="{lora_variant}",
-            lora_rank={lora_rank},
-            lora_alpha={lora_alpha},
-            lora_dropout={lora_dropout},
-            lora_targets={lora_targets},
-            qlora={qlora},
-            qlora_dtype="{qlora_dtype}",
-            chunked_loss={chunked_loss},
-            chunk_size={chunk_size},
-            grad_accum={grad_accum},
-            patience={patience},
-            input_size={input_size},
-            activation_checkpointing={activation_checkpointing},
-            activation_offloading={activation_offloading},
-            optimizer_in_bwd={optimizer_in_bwd},
-            use_8bit_optimizer={use_8bit_optimizer},
-            compile={compile_model},
-            multi_gpu={multi_gpu},
-            backbone_type="{backbone_type}",
-            finetune={finetune_arg},
-            resume={resume_arg},
-            class_file={class_file_arg},
-        )
+        kwargs = json.loads({kwargs_json!r})
+        trainer = Trainer(**kwargs)
         trainer.train()
     """)
 
@@ -2019,11 +2039,12 @@ def _run_flashdet_training():
 
     log_file_handle = open(log_path, "w")
     process = subprocess.Popen(
-        [sys.executable, "-c", train_script],
+        [sys.executable, "-u", "-c", train_script],
         stdout=log_file_handle, stderr=subprocess.STDOUT,
         start_new_session=True,
     )
-    log_file_handle.close()
+    # Keep the file handle in session state so it stays open while the subprocess runs
+    st.session_state["_log_file_handle"] = log_file_handle
 
     st.session_state["training_pid"] = process.pid
     st.session_state["training_log_file"] = log_path
@@ -2033,6 +2054,12 @@ def _run_flashdet_training():
     _tw.sleep(2)
     exit_code = process.poll()
     if exit_code is not None:
+        fh = st.session_state.pop("_log_file_handle", None)
+        if fh and not fh.closed:
+            try:
+                fh.close()
+            except Exception:
+                pass
         st.session_state["training_active"] = False
         st.session_state["training_pid"] = None
         st.session_state["training_status"] = "Failed"

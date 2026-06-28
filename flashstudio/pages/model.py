@@ -4,17 +4,14 @@ import os
 import yaml
 import streamlit as st
 from flashstudio.utils.config import apply_training_config
-
-FLASHDET_MODELS = {
-    "FlashDet-Pico": {"size": "p", "params": "~298K", "speed": "Ultra-fast", "backbone": "LiteBackbone(0.5x)", "neck": "PicoNeck(64ch)", "head": "E2EDualHead", "for": "Edge/Mobile"},
-    "FlashDet-Nano": {"size": "n", "params": "~790K", "speed": "Very fast", "backbone": "FlashBB(stem=32)", "neck": "PicoNeck(96ch)", "head": "E2EDualHead", "for": "IoT"},
-    "FlashDet-Small": {"size": "s", "params": "~1.8M", "speed": "Fast", "backbone": "FlashBB(stem=48)", "neck": "PicoNeck(128ch)", "head": "E2EDualHead", "for": "General"},
-    "FlashDet-Medium": {"size": "m", "params": "~3.6M", "speed": "Balanced", "backbone": "FlashBB(stem=64)", "neck": "PicoNeck(192ch)", "head": "E2EDualHead", "for": "Accuracy"},
-    "FlashDet-Large": {"size": "l", "params": "~5.8M", "speed": "Accurate", "backbone": "FlashBB(stem=80)", "neck": "PicoNeck(256ch)", "head": "E2EDualHead", "for": "Accuracy"},
-    "FlashDet-X": {"size": "x", "params": "~9.0M", "speed": "Max acc", "backbone": "FlashBB(stem=96)", "neck": "PicoNeck(320ch)", "head": "E2EDualHead", "for": "Server"},
-}
-OPTIMIZERS = ["AdamW", "SGD", "MuSGD"]
-LORA_VARIANTS = ["standard", "dora", "lora_plus", "adalora", "ortho", "lora_fa"]
+from flashstudio.constants import (
+    FLASHDET_MODELS, OPTIMIZERS, LORA_VARIANTS, ARCH_FAMILIES,
+    TRAIN_EPOCHS, TRAIN_BATCH_SIZE, TRAIN_LR, TRAIN_IMG_SIZE,
+    TRAIN_WEIGHT_DECAY, TRAIN_WARMUP_EPOCHS, TRAIN_PATIENCE,
+    TRAIN_NUM_WORKERS, TRAIN_GRAD_ACCUM, TRAIN_VAL_INTERVAL,
+    TRAIN_LR_FINAL_RATIO, BATCH_SIZE_OPTIONS, IMG_SIZE_OPTIONS,
+    DEFAULT_MODEL_ARCH,
+)
 
 
 def render_model_page():
@@ -39,12 +36,13 @@ def render_model_page():
 
 
 def _tab_arch():
-    arch = st.radio("Family", ["FlashDet (recommended)", "YOLOv8", "YOLOv9", "YOLOv10", "YOLOv11", "YOLOX"],
-                    key="arch_family", horizontal=True)
+    arch = st.radio("Family", ARCH_FAMILIES, key="arch_family", horizontal=True)
 
     # Head config — num_classes from dataset
     nc = st.session_state.get("num_classes", 0)
     cls_names = st.session_state.get("class_names", "")
+    if isinstance(cls_names, list):
+        cls_names = "\n".join(cls_names)
     if not nc and cls_names.strip():
         nc = len([c for c in cls_names.strip().split("\n") if c.strip()])
         st.session_state["num_classes"] = nc
@@ -115,10 +113,10 @@ def _pretrain_finetune():
                 with lc2:
                     st.slider("Alpha", 8, 128, 32, key="lora_alpha")
                     st.slider("Dropout", 0.0, 0.5, 0.0, key="lora_dropout")
-                st.multiselect("Targets", ["backbone", "fpn", "neck", "head"], default=["backbone", "fpn"], key="lora_targets")
+                st.multiselect("Targets", ["backbone", "neck", "head"], default=["backbone", "neck"], key="lora_targets")
                 st.checkbox("QLoRA", False, key="qlora")
                 if st.session_state.get("qlora"):
-                    st.selectbox("Quant", ["int8", "int4"], key="qlora_dtype")
+                    st.selectbox("Quant", ["int8", "nf4"], key="qlora_dtype")
 
 
 def _tab_hyper():
@@ -128,12 +126,12 @@ def _tab_hyper():
             st.markdown("#### Core")
             hc1, hc2 = st.columns(2)
             with hc1:
-                st.slider("Epochs", 1, 500, 100, key="epochs")
-                st.select_slider("Batch", [2, 4, 8, 16, 32, 64, 128], value=16, key="batch_size")
-                st.select_slider("Img Size", [320, 416, 640], value=320, key="img_size")
+                st.number_input("Epochs", min_value=1, max_value=10000, value=TRAIN_EPOCHS, step=10, key="epochs")
+                st.select_slider("Batch", BATCH_SIZE_OPTIONS, value=TRAIN_BATCH_SIZE, key="batch_size")
+                st.select_slider("Img Size", IMG_SIZE_OPTIONS, value=TRAIN_IMG_SIZE, key="img_size")
             with hc2:
-                st.slider("LR", 1e-5, 1e-1, 1e-3, format="%.5f", key="lr")
-                st.slider("Weight Decay", 0.0, 0.1, 0.05, format="%.3f", key="weight_decay")
+                st.slider("LR", 1e-5, 1e-1, TRAIN_LR, format="%.5f", key="lr")
+                st.slider("Weight Decay", 0.0, 0.1, TRAIN_WEIGHT_DECAY, format="%.3f", key="weight_decay")
                 st.selectbox("Optimizer", OPTIMIZERS, key="optimizer")
 
     with col2:
@@ -141,13 +139,13 @@ def _tab_hyper():
             st.markdown("#### Schedule & Options")
             sc1, sc2 = st.columns(2)
             with sc1:
-                st.slider("Warmup Ep", 0, 20, 3, key="warmup_epochs")
-                st.slider("LR Final ×", 0.01, 0.5, 0.1, format="%.2f", key="lr_final_ratio")
-                st.slider("Workers", 0, 16, 4, key="num_workers")
+                st.slider("Warmup Ep", 0, 20, TRAIN_WARMUP_EPOCHS, key="warmup_epochs")
+                st.slider("LR Final ×", 0.01, 0.5, TRAIN_LR_FINAL_RATIO, format="%.2f", key="lr_final_ratio")
+                st.slider("Workers", 0, 16, TRAIN_NUM_WORKERS, key="num_workers")
             with sc2:
-                st.slider("Patience", 5, 100, 50, key="patience")
-                st.number_input("Grad Accum", 1, 16, 1, key="grad_accum")
-                st.slider("Val Interval", 1, 20, 5, key="val_interval")
+                st.slider("Patience", 5, 100, TRAIN_PATIENCE, key="patience")
+                st.number_input("Grad Accum", 1, 16, TRAIN_GRAD_ACCUM, key="grad_accum")
+                st.slider("Val Interval", 1, 20, TRAIN_VAL_INTERVAL, key="val_interval")
             oc1, oc2, oc3 = st.columns(3)
             with oc1:
                 st.checkbox("AMP FP16", True, key="amp")
@@ -197,6 +195,8 @@ def _tab_adv():
             # Class info
             nc = st.session_state.get("num_classes", 0)
             cls_names = st.session_state.get("class_names", "")
+            if isinstance(cls_names, list):
+                cls_names = "\n".join(cls_names)
             if nc and cls_names.strip():
                 names_list = [c.strip() for c in cls_names.strip().split("\n") if c.strip()]
                 preview = ", ".join(names_list[:5])
@@ -209,8 +209,10 @@ def _tab_adv():
             st.text_input("Class File (.txt)", placeholder="auto-generated from dataset classes",
                           key="class_file", help="Leave empty to auto-generate from dataset classes")
 
-            _default = os.path.join(os.getcwd(), "workspace")
-            st.text_input("Save Dir", value=_default, key="save_dir")
+            from flashstudio.utils import DEFAULTS
+            if "save_dir" not in st.session_state:
+                st.session_state["save_dir"] = DEFAULTS["save_dir"]
+            st.text_input("Save Dir", key="save_dir")
             rc1, rc2 = st.columns(2)
             with rc1:
                 st.checkbox("Save Best Only", True, key="save_best")
@@ -221,18 +223,20 @@ def _tab_adv():
 
 
 def _summary_bar():
-    model = st.session_state.get("model_arch", "FlashDet-Pico")
+    model = st.session_state.get("model_arch", DEFAULT_MODEL_ARCH)
     nc = st.session_state.get("num_classes", 0)
     cls_names = st.session_state.get("class_names", "")
+    if isinstance(cls_names, list):
+        cls_names = "\n".join(cls_names)
     nc_display = nc if nc else len([c for c in cls_names.strip().split("\n") if c.strip()]) if cls_names.strip() else "—"
     st.markdown(
         f'<div class="info-bar">'
         f'Model: <b>{model.replace("FlashDet-", "")}</b> · '
         f'Classes: <b>{nc_display}</b> · '
-        f'Ep: <b>{st.session_state.get("epochs", 100)}</b> · '
-        f'BS: <b>{st.session_state.get("batch_size", 16)}</b> · '
-        f'LR: <b>{st.session_state.get("lr", 0.001):.1e}</b> · '
-        f'Img: <b>{st.session_state.get("img_size", 320)}</b> · '
+        f'Ep: <b>{st.session_state.get("epochs", TRAIN_EPOCHS)}</b> · '
+        f'BS: <b>{st.session_state.get("batch_size", TRAIN_BATCH_SIZE)}</b> · '
+        f'LR: <b>{st.session_state.get("lr", TRAIN_LR):.1e}</b> · '
+        f'Img: <b>{st.session_state.get("img_size", TRAIN_IMG_SIZE)}</b> · '
         f'AMP: <b>{"On" if st.session_state.get("amp") else "Off"}</b>'
         f'</div>',
         unsafe_allow_html=True,
@@ -240,7 +244,9 @@ def _summary_bar():
     with st.expander("Save / Load Config", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("Download YAML", yaml.dump(_build_cfg(), default_flow_style=False, sort_keys=False),
+            from flashstudio.utils.config import build_training_config
+            full_cfg = build_training_config()
+            st.download_button("Download YAML", yaml.dump(full_cfg, default_flow_style=False, sort_keys=False),
                                file_name="config.yaml", mime="text/yaml", use_container_width=True)
         with c2:
             up = st.file_uploader("Load", type=["yaml", "yml"], key="cfg_upload", label_visibility="collapsed")
@@ -258,9 +264,9 @@ def _summary_bar():
 
 def _build_cfg():
     return {
-        "model": {"family": st.session_state.get("arch_family", "FlashDet"), "variant": st.session_state.get("model_arch", "FlashDet-Pico")},
-        "training": {"epochs": st.session_state.get("epochs", 100), "batch_size": st.session_state.get("batch_size", 16),
-                     "lr": st.session_state.get("lr", 0.001), "img_size": st.session_state.get("img_size", 320)},
+        "model": {"family": st.session_state.get("arch_family", ARCH_FAMILIES[0]), "variant": st.session_state.get("model_arch", DEFAULT_MODEL_ARCH)},
+        "training": {"epochs": st.session_state.get("epochs", TRAIN_EPOCHS), "batch_size": st.session_state.get("batch_size", TRAIN_BATCH_SIZE),
+                     "lr": st.session_state.get("lr", TRAIN_LR), "img_size": st.session_state.get("img_size", TRAIN_IMG_SIZE)},
         "augmentation": {"mosaic": st.session_state.get("aug_mosaic", True), "mixup": st.session_state.get("aug_mixup", False)},
         "advanced": {"amp": st.session_state.get("amp", True), "compile": st.session_state.get("compile_model", False)},
     }

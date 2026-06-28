@@ -25,8 +25,13 @@ def _load_index() -> dict:
     """Load the global project index."""
     _ensure_dirs()
     if os.path.isfile(PROJECTS_INDEX):
-        with open(PROJECTS_INDEX, "r") as f:
-            return json.load(f)
+        try:
+            with open(PROJECTS_INDEX, "r") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and "projects" in data:
+                return data
+        except (json.JSONDecodeError, OSError):
+            pass
     return {"projects": [], "active": None}
 
 
@@ -144,7 +149,7 @@ def save_project_state():
     state_keys = [
         "dataset_name", "dataset_classes", "dataset_id", "dataset_output_path",
         "train_img_path", "val_img_path", "train_ann_path", "val_ann_path",
-        "ann_format", "class_names", "upload_num_classes",
+        "ann_format", "class_names", "upload_num_classes", "num_classes",
         "model_arch", "arch_family", "epochs", "batch_size", "lr", "img_size",
         "finetune_strategy", "pretrain_option", "custom_weights",
         "lora_variant", "lora_rank", "lora_alpha", "lora_dropout", "lora_targets",
@@ -216,30 +221,64 @@ def duplicate_project(project_id: str, new_name: str) -> dict:
 
 def get_project_stats(project_id: str) -> dict:
     """Get statistics for a project."""
+    import re, csv, glob
     proj_dir = get_project_dir(project_id)
     stats = {"runs": 0, "best_map": None, "total_size": "0 KB", "has_export": False}
 
-    runs_dir = os.path.join(proj_dir, "runs")
-    if os.path.isdir(runs_dir):
-        runs = [d for d in os.listdir(runs_dir) if os.path.isdir(os.path.join(runs_dir, d))]
-        stats["runs"] = len(runs)
+    # Check both project/runs/ and workspace/
+    from flashstudio.constants import DEFAULT_SAVE_DIR
+    runs_dirs = [os.path.join(proj_dir, "runs")]
+    if os.path.isdir(DEFAULT_SAVE_DIR):
+        runs_dirs.append(DEFAULT_SAVE_DIR)
 
-        # Find best mAP across runs
-        best_map = 0
+    best_map = 0
+    total_runs = 0
+    for runs_dir in runs_dirs:
+        if not os.path.isdir(runs_dir):
+            continue
+        runs = [d for d in os.listdir(runs_dir) if os.path.isdir(os.path.join(runs_dir, d))]
+        total_runs += len(runs)
+
         for run in runs:
-            results_file = os.path.join(runs_dir, run, "results.json")
-            if os.path.isfile(results_file):
-                with open(results_file) as f:
-                    results = json.load(f)
-                m = results.get("best_mAP50", 0)
-                if m > best_map:
-                    best_map = m
-        if best_map > 0:
-            stats["best_map"] = best_map
+            rd = os.path.join(runs_dir, run)
+            from flashstudio.constants import TRAINING_LOG_CSV
+            csv_path = os.path.join(rd, TRAINING_LOG_CSV)
+            if os.path.isfile(csv_path):
+                try:
+                    with open(csv_path, "r") as f:
+                        rows = list(csv.DictReader(f))
+                    vals = [float(r.get("mAP@0.5", 0)) for r in rows if r.get("mAP@0.5", "").strip()]
+                    if vals and max(vals) > best_map:
+                        best_map = max(vals)
+                except Exception:
+                    pass
+            if best_map == 0:
+                logs = glob.glob(os.path.join(rd, "train_*.log"))
+                for lf in logs:
+                    try:
+                        with open(lf, "r", encoding="utf-8", errors="replace") as f:
+                            for ln in f.readlines()[-10:]:
+                                bm = re.search(r"Best mAP@0\.5:\s*([\d.]+)", ln)
+                                if bm and float(bm.group(1)) > best_map:
+                                    best_map = float(bm.group(1))
+                    except OSError:
+                        pass
+
+    stats["runs"] = total_runs
+    if best_map > 0:
+        stats["best_map"] = best_map
 
     exports_dir = os.path.join(proj_dir, "exports")
     if os.path.isdir(exports_dir) and os.listdir(exports_dir):
         stats["has_export"] = True
+    if not stats["has_export"]:
+        for runs_dir in runs_dirs:
+            if os.path.isdir(runs_dir):
+                for d in os.listdir(runs_dir):
+                    rd = os.path.join(runs_dir, d)
+                    if os.path.isdir(rd) and any(f.endswith(".onnx") for f in os.listdir(rd)):
+                        stats["has_export"] = True
+                        break
 
     stats["total_size"] = _dir_size_str(proj_dir)
     return stats
