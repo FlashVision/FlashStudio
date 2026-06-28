@@ -19,7 +19,9 @@ LORA_VARIANTS = ["standard", "dora", "lora_plus", "adalora", "ortho", "lora_fa"]
 
 def render_model_page():
     from flashstudio.components.styles import render_page_header
-    render_page_header("🧠", "Model")
+    from flashstudio.utils import show_flashes
+    render_page_header("", "Model")
+    show_flashes()
 
     tab_arch, tab_hyper, tab_aug, tab_adv = st.tabs(["Architecture", "Hyperparams", "Augment", "Advanced"])
 
@@ -40,6 +42,13 @@ def _tab_arch():
     arch = st.radio("Family", ["FlashDet (recommended)", "YOLOv8", "YOLOv9", "YOLOv10", "YOLOv11", "YOLOX"],
                     key="arch_family", horizontal=True)
 
+    # Head config — num_classes from dataset
+    nc = st.session_state.get("num_classes", 0)
+    cls_names = st.session_state.get("class_names", "")
+    if not nc and cls_names.strip():
+        nc = len([c for c in cls_names.strip().split("\n") if c.strip()])
+        st.session_state["num_classes"] = nc
+
     if arch == "FlashDet (recommended)":
         col_sel, col_info = st.columns([2, 3])
         with col_sel:
@@ -52,13 +61,19 @@ def _tab_arch():
             st.caption(f"{info['neck']} → {info['head']} · CIoU+BCE+L1 · STAL · ProgLoss")
 
         with col_info:
-            m1, m2, m3 = st.columns(3)
+            m1, m2, m3, m4 = st.columns(4)
             with m1:
                 st.metric("Params", info["params"])
             with m2:
                 st.metric("Speed", info["speed"])
             with m3:
                 st.metric("Best For", info["for"])
+            with m4:
+                st.metric("Head Classes", nc if nc else "—")
+            if nc:
+                st.caption(f"Model head output → **{nc}** classes (auto-set from dataset)")
+            else:
+                st.info("No classes detected yet. Go to **Data** → **Upload** to load a dataset and classes will be set automatically.")
             _pretrain_finetune()
     else:
         name = arch.replace(" (recommended)", "")
@@ -74,6 +89,8 @@ def _tab_arch():
                 st.checkbox("C2PSA", True, key="yolo_use_c2psa")
         with col_info:
             st.caption(f"{name} — fixed backbone/neck/head. Control via width/depth multipliers.")
+            if nc:
+                st.metric("Head Classes", nc)
             _pretrain_finetune()
 
 
@@ -176,8 +193,23 @@ def _tab_adv():
         with st.container(border=True):
             st.markdown("#### Distributed & IO")
             st.checkbox("Multi-GPU (DDP)", False, key="ddp")
-            st.text_input("Class File", placeholder="classes.txt", key="class_file")
-            _default = os.path.join(os.getcwd(), "flashstudio_runs")
+
+            # Class info
+            nc = st.session_state.get("num_classes", 0)
+            cls_names = st.session_state.get("class_names", "")
+            if nc and cls_names.strip():
+                names_list = [c.strip() for c in cls_names.strip().split("\n") if c.strip()]
+                preview = ", ".join(names_list[:5])
+                if len(names_list) > 5:
+                    preview += f" ... (+{len(names_list) - 5})"
+                st.caption(f"Classes ({nc}): {preview}")
+            else:
+                st.caption("Classes: not set — go to Data → Upload")
+
+            st.text_input("Class File (.txt)", placeholder="auto-generated from dataset classes",
+                          key="class_file", help="Leave empty to auto-generate from dataset classes")
+
+            _default = os.path.join(os.getcwd(), "workspace")
             st.text_input("Save Dir", value=_default, key="save_dir")
             rc1, rc2 = st.columns(2)
             with rc1:
@@ -190,9 +222,13 @@ def _tab_adv():
 
 def _summary_bar():
     model = st.session_state.get("model_arch", "FlashDet-Pico")
+    nc = st.session_state.get("num_classes", 0)
+    cls_names = st.session_state.get("class_names", "")
+    nc_display = nc if nc else len([c for c in cls_names.strip().split("\n") if c.strip()]) if cls_names.strip() else "—"
     st.markdown(
         f'<div class="info-bar">'
         f'Model: <b>{model.replace("FlashDet-", "")}</b> · '
+        f'Classes: <b>{nc_display}</b> · '
         f'Ep: <b>{st.session_state.get("epochs", 100)}</b> · '
         f'BS: <b>{st.session_state.get("batch_size", 16)}</b> · '
         f'LR: <b>{st.session_state.get("lr", 0.001):.1e}</b> · '
@@ -212,7 +248,10 @@ def _summary_bar():
                 try:
                     loaded = yaml.safe_load(up.read().decode("utf-8"))
                     if st.button("Apply", key="apply_cfg", use_container_width=True):
-                        _apply_cfg(loaded); st.rerun()
+                        from flashstudio.utils import flash
+                        _apply_cfg(loaded)
+                        flash("Config applied", "success")
+                        st.rerun()
                 except Exception as e:
                     st.error(str(e)[:40])
 

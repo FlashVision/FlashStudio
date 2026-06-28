@@ -7,12 +7,12 @@ from flashstudio.components.project_manager import (
 )
 
 NAV = [
-    ("🏠", "Dashboard"),
-    ("📦", "Data"),
-    ("🧠", "Model"),
-    ("🏋️", "Training"),
-    ("📤", "Export"),
-    ("🔍", "Inference"),
+    ("1", "Dashboard"),
+    ("2", "Data"),
+    ("3", "Model"),
+    ("4", "Training"),
+    ("5", "Export"),
+    ("6", "Inference"),
 ]
 
 
@@ -20,7 +20,7 @@ def render_sidebar():
     with st.sidebar:
         st.markdown(
             '<div style="text-align:center;padding:0.4rem 0 0.3rem;">'
-            '<span style="font-size:1.5rem;">⚡</span>'
+            '<b style="font-size:1.5rem;">FS</b>'
             '<b style="font-size:1rem;color:#1A1A2E;margin-left:0.3rem;">FlashStudio</b>'
             '</div>',
             unsafe_allow_html=True,

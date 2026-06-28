@@ -3,11 +3,50 @@
 import os
 import json
 import streamlit as st
-from flashdet import download_dataset, list_datasets
-from flashdet.data import convert_dataset, detect_dataset_format, verify_dataset, summarize_coco_root
+try:
+    from flashdet import download_dataset, list_datasets
+    from flashdet.data import convert_dataset, detect_dataset_format, verify_dataset, summarize_coco_root
+    _HAS_FLASHDET = True
+except ImportError:
+    _HAS_FLASHDET = False
+
+_FLASHDET_INSTALL_MSG = "FlashDet required — install with: `pip install flashdet`"
+
+
+def _extract_classes_from_coco_json(ann_path: str) -> list[str]:
+    """Read class names from a COCO-format annotation JSON file."""
+    try:
+        with open(ann_path, encoding="utf-8") as f:
+            data = json.load(f)
+        cats = data.get("categories", [])
+        if not cats:
+            return []
+        sorted_cats = sorted(cats, key=lambda c: c.get("id", 0))
+        return [c["name"] for c in sorted_cats]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return []
+
+
+def _auto_detect_classes():
+    """Try to auto-detect classes from the loaded dataset annotation."""
+    train_path = st.session_state.get("train_img_path", "")
+    if not train_path or not os.path.isdir(train_path):
+        return []
+
+    ann_file = os.path.join(train_path, "_annotations.coco.json")
+    if not os.path.isfile(ann_file):
+        json_files = [f for f in os.listdir(train_path) if f.endswith(".json")]
+        if json_files:
+            ann_file = os.path.join(train_path, json_files[0])
+        else:
+            return []
+
+    return _extract_classes_from_coco_json(ann_file)
 
 
 def _get_native_datasets():
+    if not _HAS_FLASHDET:
+        return []
     try:
         return list_datasets()
     except Exception:
@@ -59,7 +98,9 @@ QUICK_START = [
 
 def render_data_page():
     from flashstudio.components.styles import render_page_header
+    from flashstudio.utils import show_flashes
     render_page_header("", "Data")
+    show_flashes()
 
     # Status banner
     dataset = st.session_state.get("dataset_name")
@@ -93,19 +134,31 @@ def _render_upload():
         with st.container(border=True):
             st.markdown("#### Train")
             train_upload = st.file_uploader("ZIP/TAR", type=["zip", "tar", "gz"], key="train_data_upload")
-            st.text_input("Images dir", placeholder="/path/images/", key="train_img_path")
+            manual_train = st.text_input(
+                "Images dir", placeholder="/path/to/train/",
+                value=st.session_state.get("train_img_path", ""),
+                key="_train_img_input",
+            )
+            if manual_train:
+                st.session_state["train_img_path"] = manual_train
 
     with col2:
         with st.container(border=True):
             st.markdown("#### Val")
             val_upload = st.file_uploader("ZIP/TAR", type=["zip", "tar", "gz"], key="val_data_upload")
-            st.text_input("Images dir", placeholder="/path/images/", key="val_img_path")
+            manual_val = st.text_input(
+                "Images dir", placeholder="/path/to/valid/",
+                value=st.session_state.get("val_img_path", ""),
+                key="_val_img_input",
+            )
+            if manual_val:
+                st.session_state["val_img_path"] = manual_val
 
     fc1, fc2, fc3 = st.columns([2, 1, 2])
     with fc1:
         st.selectbox("Format", ["COCO JSON", "Pascal VOC", "YOLO TXT"], key="ann_format")
     with fc2:
-        st.number_input("Classes", 1, 1000, 80, key="upload_num_classes")
+        pass
     with fc3:
         if train_upload:
             st.session_state["dataset_name"] = train_upload.name
@@ -116,7 +169,80 @@ def _render_upload():
             if st.button("Extract Val", key="extract_val", use_container_width=True):
                 _extract_upload(val_upload, "val")
 
+    # ── Classes section ──
+    _render_class_config()
+
     _render_conversion_hint()
+
+
+def _render_class_config():
+    """Render class configuration: auto-detect from annotation, load from .txt, or manual edit."""
+    from flashstudio.utils import flash
+
+    with st.container(border=True):
+        st.markdown("#### Classes")
+
+        # Auto-detect button + .txt upload in one row
+        cc1, cc2, cc3 = st.columns([2, 2, 1])
+        with cc1:
+            if st.button("Auto-detect from annotation", key="btn_auto_classes",
+                         use_container_width=True, type="primary"):
+                detected = _auto_detect_classes()
+                if detected:
+                    st.session_state["class_names"] = "\n".join(detected)
+                    st.session_state["num_classes"] = len(detected)
+                    flash(f"Detected {len(detected)} classes from annotation", "success")
+                    st.rerun()
+                else:
+                    flash("No classes found — load a dataset with COCO annotations first", "warning")
+                    st.rerun()
+
+        with cc2:
+            cls_file = st.file_uploader("Load classes.txt", type=["txt"],
+                                        key="class_txt_upload", label_visibility="collapsed")
+            if cls_file:
+                content = cls_file.read().decode("utf-8", errors="ignore")
+                names = [line.strip() for line in content.strip().split("\n") if line.strip()]
+                if names:
+                    st.session_state["class_names"] = "\n".join(names)
+                    st.session_state["num_classes"] = len(names)
+                    flash(f"Loaded {len(names)} classes from file", "success")
+                    st.rerun()
+
+        with cc3:
+            nc = st.session_state.get("num_classes", 0)
+            st.metric("Count", nc if nc else "—")
+
+        # Auto-detect on first load if classes not set
+        current_classes = st.session_state.get("class_names", "")
+        if not current_classes.strip() and st.session_state.get("train_img_path"):
+            detected = _auto_detect_classes()
+            if detected:
+                st.session_state["class_names"] = "\n".join(detected)
+                st.session_state["num_classes"] = len(detected)
+
+        # Editable text area
+        class_text = st.text_area(
+            "Class names (one per line)",
+            value=st.session_state.get("class_names", ""),
+            height=100,
+            key="_class_names_input",
+            placeholder="person\ncar\nbicycle\n...",
+        )
+        if class_text != st.session_state.get("class_names", ""):
+            names = [n.strip() for n in class_text.strip().split("\n") if n.strip()]
+            st.session_state["class_names"] = "\n".join(names)
+            st.session_state["num_classes"] = len(names)
+
+        # Download button for current classes
+        if current_classes.strip():
+            st.download_button(
+                "Download classes.txt",
+                current_classes.strip() + "\n",
+                file_name="classes.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
 
 
 def _render_conversion_hint():
@@ -128,7 +254,7 @@ def _render_conversion_hint():
     needs = "YOLO" in ann_format or "VOC" in ann_format or detected in ("txt", "voc")
     if not needs:
         coco_ann = os.path.join(train_path, "_annotations.coco.json")
-        if not os.path.isfile(coco_ann):
+        if not os.path.isfile(coco_ann) and _HAS_FLASHDET:
             parent = os.path.dirname(train_path)
             det_fmt = detect_dataset_format(parent)
             if det_fmt in ("txt", "voc"):
@@ -223,7 +349,7 @@ def _render_preview():
         st.info("No dataset loaded yet.")
         return
 
-    c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+    c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         split = st.radio("Split", ["Train", "Val"], horizontal=True, key="prev_split")
     preview_path = train_path if split == "Train" else val_path
@@ -240,11 +366,27 @@ def _render_preview():
     with c2:
         n = st.slider("Count", 1, min(12, len(all_imgs)), 4, key="prev_n")
     with c3:
-        start = st.number_input("Start", 0, max(0, len(all_imgs) - 1), 0, key="prev_s")
-    with c4:
         bbox = st.checkbox("Boxes", value=True, key="prev_bb")
 
-    # Load annotations
+    if "prev_start" not in st.session_state:
+        st.session_state["prev_start"] = 0
+    start = st.session_state["prev_start"]
+
+    nav_prev, nav_info, nav_next = st.columns([1, 3, 1])
+    with nav_prev:
+        if st.button("Prev", disabled=(start <= 0), key="prev_btn"):
+            st.session_state["prev_start"] = max(0, start - n)
+            st.rerun()
+    with nav_info:
+        end_idx = min(start + n, len(all_imgs))
+        st.markdown(f'<p style="text-align:center;margin:0;padding:0.3rem 0;color:#6B7280;">'
+                    f'{start + 1}–{end_idx} of {len(all_imgs)}</p>', unsafe_allow_html=True)
+    with nav_next:
+        if st.button("Next", disabled=(start + n >= len(all_imgs)), key="next_btn"):
+            st.session_state["prev_start"] = min(start + n, len(all_imgs) - 1)
+            st.rerun()
+
+    # Load COCO annotations if available
     ann_file = os.path.join(preview_path, "_annotations.coco.json")
     ann_data = None
     if os.path.isfile(ann_file):
@@ -263,40 +405,73 @@ def _render_preview():
         for a in ann_data.get("annotations", []):
             ann_by_img.setdefault(a["image_id"], []).append(a)
 
+    # YOLO label directory — check sibling 'labels' folder or session state
+    yolo_label_dir = st.session_state.get(f"{split.lower()}_label_path", "")
+    if not yolo_label_dir or not os.path.isdir(yolo_label_dir):
+        candidate = preview_path.replace("/images/", "/labels/").replace("\\images\\", "\\labels\\")
+        if os.path.isdir(candidate):
+            yolo_label_dir = candidate
+        else:
+            yolo_label_dir = ""
+
     from PIL import Image, ImageDraw
     COLORS = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255),(128,0,0),(0,128,0)]
     selected = all_imgs[start:start + n]
 
+    total_boxes = 0
     for row in range(0, len(selected), 4):
         cols = st.columns(4)
         for j, col in enumerate(cols):
             idx = row + j
             if idx >= len(selected):
                 break
-            name = selected[idx]
+            img_name = selected[idx]
             with col:
                 try:
-                    img = Image.open(os.path.join(preview_path, name)).convert("RGB")
-                    if bbox and ann_data and name in img_id_map:
+                    img = Image.open(os.path.join(preview_path, img_name)).convert("RGB")
+                    w_img, h_img = img.size
+                    if bbox:
                         draw = ImageDraw.Draw(img)
-                        for a in ann_by_img.get(img_id_map[name], []):
-                            b = a.get("bbox", [])
-                            if len(b) == 4:
-                                x, y, w, h = b
-                                color = COLORS[a.get("category_id", 0) % len(COLORS)]
-                                draw.rectangle([x, y, x+w, y+h], outline=color, width=2)
-                    st.image(img, caption=f"{name[:15]} {img.size[0]}×{img.size[1]}", use_container_width=True)
+                        drawn = False
+                        if ann_data and img_name in img_id_map:
+                            for a in ann_by_img.get(img_id_map[img_name], []):
+                                b = a.get("bbox", [])
+                                if len(b) == 4:
+                                    x, y, w, h = b
+                                    color = COLORS[a.get("category_id", 0) % len(COLORS)]
+                                    draw.rectangle([x, y, x+w, y+h], outline=color, width=2)
+                                    total_boxes += 1
+                                    drawn = True
+                        if not drawn and yolo_label_dir:
+                            lbl_name = os.path.splitext(img_name)[0] + ".txt"
+                            lbl_path = os.path.join(yolo_label_dir, lbl_name)
+                            if os.path.isfile(lbl_path):
+                                with open(lbl_path) as lf:
+                                    for line in lf:
+                                        parts = line.strip().split()
+                                        if len(parts) >= 5:
+                                            cls_id = int(parts[0])
+                                            cx, cy, bw, bh = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                                            x1 = int((cx - bw / 2) * w_img)
+                                            y1 = int((cy - bh / 2) * h_img)
+                                            x2 = int((cx + bw / 2) * w_img)
+                                            y2 = int((cy + bh / 2) * h_img)
+                                            color = COLORS[cls_id % len(COLORS)]
+                                            draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
+                                            total_boxes += 1
+                    st.image(img, caption=f"{img_name[:15]} {w_img}x{h_img}", use_container_width=True)
                 except Exception as e:
                     st.error(str(e)[:40])
 
-    if ann_data:
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("Images", len(ann_data.get("images", [])))
-        with m2:
-            st.metric("Annotations", len(ann_data.get("annotations", [])))
-        with m3:
-            st.metric("Categories", len(cat_map))
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric("Images", len(all_imgs))
+    with m2:
+        ann_count = len(ann_data.get("annotations", [])) if ann_data else total_boxes
+        st.metric("Annotations", ann_count)
+    with m3:
+        cat_count = len(cat_map) if cat_map else "—"
+        st.metric("Categories", cat_count)
 
 
 # ════════════════════════════════════════
@@ -307,13 +482,13 @@ def _render_verify():
     train_path = st.session_state.get("train_img_path", "")
     val_path = st.session_state.get("val_img_path", "")
     if not train_path and not val_path:
-        st.info("No dataset loaded.")
+        st.info("No dataset loaded. Upload or download a dataset first.")
         return
 
     dataset_root = st.session_state.get("dataset_output_path", "")
 
     # FlashDet verify
-    if dataset_root and os.path.isdir(dataset_root):
+    if dataset_root and os.path.isdir(dataset_root) and _HAS_FLASHDET:
         try:
             ok = verify_dataset(dataset_root)
             st.success("Verification **PASSED**") if ok else st.warning("Verification: issues detected")
@@ -340,29 +515,50 @@ def _render_verify():
             pass
         return
 
-    # Manual count
+    if not _HAS_FLASHDET and dataset_root and os.path.isdir(dataset_root):
+        st.info(_FLASHDET_INSTALL_MSG)
+
+    # Manual count — always show this as fallback
     EXT = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff")
     ti = [f for f in os.listdir(train_path) if f.lower().endswith(EXT)] if train_path and os.path.isdir(train_path) else []
     vi = [f for f in os.listdir(val_path) if f.lower().endswith(EXT)] if val_path and os.path.isdir(val_path) else []
 
+    # Count YOLO labels if present
+    train_label_dir = st.session_state.get("train_label_path", "")
+    if not train_label_dir and train_path:
+        candidate = train_path.replace("/images/", "/labels/").replace("\\images\\", "\\labels\\")
+        if os.path.isdir(candidate):
+            train_label_dir = candidate
+    train_labels = len([f for f in os.listdir(train_label_dir) if f.endswith(".txt")]) if train_label_dir and os.path.isdir(train_label_dir) else 0
+
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Train", len(ti))
+        st.metric("Train Images", len(ti))
     with m2:
-        st.metric("Val", len(vi))
+        st.metric("Val Images", len(vi))
     with m3:
-        st.metric("Total", len(ti) + len(vi))
+        st.metric("Labels", train_labels if train_labels else "—")
     with m4:
-        st.metric("Status", "OK" if ti else "Empty")
+        status = "OK" if ti else "Empty"
+        if ti and train_labels and train_labels == len(ti):
+            status = "Complete"
+        elif ti and train_labels and train_labels != len(ti):
+            status = f"Partial ({train_labels}/{len(ti)})"
+        st.metric("Status", status)
+
+    if train_path and os.path.isdir(train_path):
+        st.caption(f"Train: `{train_path}`")
+    if val_path and os.path.isdir(val_path):
+        st.caption(f"Val: `{val_path}`")
 
     # Sample preview
     if ti:
         with st.expander("Samples"):
             cols = st.columns(min(4, len(ti)))
-            for i, name in enumerate(ti[:4]):
+            for i, img_name in enumerate(ti[:4]):
                 with cols[i]:
                     try:
-                        st.image(os.path.join(train_path, name), caption=name[:15], use_container_width=True)
+                        st.image(os.path.join(train_path, img_name), caption=img_name[:15], use_container_width=True)
                     except Exception:
                         pass
 
@@ -396,30 +592,55 @@ def _extract_upload(uploaded_file, split):
                 st.error(f"Unsupported: {name}")
                 return
 
-            fmt = detect_dataset_format(out)
+            root = _find_root(out)
+            st.session_state["dataset_output_path"] = root
+
+            fmt = "unknown"
+            if _HAS_FLASHDET:
+                fmt = detect_dataset_format(root)
             st.session_state["detected_format"] = fmt
-            if fmt == "unknown":
-                sub = _find_root(out)
-                if sub and sub != out:
-                    fmt = detect_dataset_format(sub)
-                    if fmt != "unknown":
-                        out = sub
+
             if fmt in ("txt", "voc"):
-                _convert_to_coco(out, split, fmt)
+                _convert_to_coco(root, split, fmt)
                 return
 
-            img_dir = _find_images(out)
+            img_dir = _find_images(root)
             if img_dir:
                 st.session_state[f"{split}_img_path"] = img_dir
-                ann = _find_ann(out)
+                ann = _find_ann(root)
                 if ann:
                     st.session_state[f"{split}_ann_path"] = ann
+                label_dir = _find_labels(root)
+                if label_dir:
+                    st.session_state[f"{split}_label_path"] = label_dir
+                st.session_state["dataset_name"] = name.rsplit(".", 1)[0]
+
+                # Auto-detect sibling split (e.g., valid/ alongside train/)
+                parent = os.path.dirname(img_dir)
+                for sibling, key in [("valid", "val"), ("val", "val"), ("test", "test"), ("train", "train")]:
+                    sib_path = os.path.join(parent, sibling)
+                    if os.path.isdir(sib_path) and key != split:
+                        sk = "val_img_path" if key in ("val",) else f"{key}_img_path"
+                        if not st.session_state.get(sk):
+                            st.session_state[sk] = sib_path
+
+                # Auto-detect classes from annotation
+                detected_cls = _auto_detect_classes()
+                if detected_cls and not st.session_state.get("class_names", "").strip():
+                    st.session_state["class_names"] = "\n".join(detected_cls)
+                    st.session_state["num_classes"] = len(detected_cls)
+
+                from flashstudio.utils import flash
+                flash(f"Extracted `{name}` to {img_dir}", "success")
                 st.rerun()
             else:
-                st.session_state[f"{split}_img_path"] = out
+                st.session_state[f"{split}_img_path"] = root
+                st.session_state["dataset_name"] = name.rsplit(".", 1)[0]
+                from flashstudio.utils import flash
+                flash(f"Extracted `{name}` (no images dir found, using root)", "warning")
                 st.rerun()
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Extract failed: {e}")
 
 
 def _find_root(base):
@@ -430,12 +651,15 @@ def _find_root(base):
             return s
     for e in entries:
         full = os.path.join(base, e)
-        if os.path.isdir(full) and detect_dataset_format(full) != "unknown":
+        if os.path.isdir(full) and _HAS_FLASHDET and detect_dataset_format(full) != "unknown":
             return full
     return base
 
 
 def _convert_to_coco(src, split, src_fmt):
+    if not _HAS_FLASHDET:
+        st.error(_FLASHDET_INSTALL_MSG)
+        return
     out = os.path.join("data", "uploaded", f"{split}_coco")
     cls_names = None
     raw = st.session_state.get("class_names", "")
@@ -456,6 +680,8 @@ def _convert_to_coco(src, split, src_fmt):
                 st.session_state[f"{split}_img_path"] = t
             if os.path.isdir(v):
                 st.session_state["val_img_path"] = v
+            from flashstudio.utils import flash
+            flash("Converted to COCO format", "success")
             st.rerun()
         except Exception as e:
             st.error(f"Conversion failed: {e}")
@@ -463,15 +689,22 @@ def _convert_to_coco(src, split, src_fmt):
 
 def _find_images(base):
     EXT = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+    best = None
+    best_count = 0
     for root, dirs, files in os.walk(base):
-        if len([f for f in files if f.lower().endswith(EXT)]) >= 2:
-            return root
+        img_count = len([f for f in files if f.lower().endswith(EXT)])
+        if img_count > best_count:
+            best = root
+            best_count = img_count
         for d in dirs:
             if d.lower() in ("images", "imgs"):
                 c = os.path.join(root, d)
-                if any(f.lower().endswith(EXT) for f in os.listdir(c)):
-                    return c
-    return None
+                for sub_root, _, sub_files in os.walk(c):
+                    sc = len([f for f in sub_files if f.lower().endswith(EXT)])
+                    if sc > best_count:
+                        best = sub_root
+                        best_count = sc
+    return best if best_count >= 1 else None
 
 
 def _find_ann(base):
@@ -482,9 +715,23 @@ def _find_ann(base):
     return None
 
 
+def _find_labels(base):
+    """Find YOLO-format label directory (folder named 'labels' with .txt files)."""
+    for root, dirs, files in os.walk(base):
+        for d in dirs:
+            if d.lower() == "labels":
+                lbl_dir = os.path.join(root, d)
+                for sub_root, _, sub_files in os.walk(lbl_dir):
+                    if any(f.endswith(".txt") for f in sub_files):
+                        return sub_root
+    return None
+
+
 def _use_existing(path, ds_info):
+    from flashstudio.utils import flash
     st.session_state["dataset_output_path"] = path
-    st.session_state["dataset_name"] = ds_info.get("name", os.path.basename(path))
+    name = ds_info.get("name", os.path.basename(path))
+    st.session_state["dataset_name"] = name
     st.session_state["dataset_classes"] = ds_info.get("classes", ds_info.get("cls", 80))
     if ds_info.get("id"):
         st.session_state["dataset_id"] = ds_info["id"]
@@ -493,10 +740,20 @@ def _use_existing(path, ds_info):
         st.session_state["train_img_path"] = t
     if os.path.isdir(v):
         st.session_state["val_img_path"] = v
+
+    detected_cls = _auto_detect_classes()
+    if detected_cls:
+        st.session_state["class_names"] = "\n".join(detected_cls)
+        st.session_state["num_classes"] = len(detected_cls)
+
+    flash(f"Dataset `{name}` loaded", "success")
     st.rerun()
 
 
 def _run_flashdet_download(dataset_id):
+    if not _HAS_FLASHDET:
+        st.error(_FLASHDET_INSTALL_MSG)
+        return
     out = st.session_state.get("download_output_dir") or os.path.join("data", dataset_id)
     existing = _dataset_already_downloaded(dataset_id, out)
     if existing:
@@ -505,6 +762,10 @@ def _run_flashdet_download(dataset_id):
             p = os.path.join(existing, d)
             if os.path.isdir(p):
                 st.session_state[k] = p
+        detected_cls = _auto_detect_classes()
+        if detected_cls:
+            st.session_state["class_names"] = "\n".join(detected_cls)
+            st.session_state["num_classes"] = len(detected_cls)
         st.rerun()
         return
     if not _check_network():
@@ -518,6 +779,8 @@ def _run_flashdet_download(dataset_id):
                 p = os.path.join(result, d)
                 if os.path.isdir(p):
                     st.session_state[k] = p
+            from flashstudio.utils import flash
+            flash(f"Downloaded `{dataset_id}` successfully", "success")
             st.rerun()
         except Exception as e:
             st.error(f"Download failed: {e}")

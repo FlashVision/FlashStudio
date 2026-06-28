@@ -103,7 +103,7 @@ def switch_project(project_id: str):
     index = _load_index()
     index["active"] = project_id
     _save_index(index)
-    _load_project_state(project_id)
+    load_project_state(project_id)
 
 
 def delete_project(project_id: str):
@@ -177,7 +177,7 @@ def save_project_state():
     _save_index(index)
 
 
-def _load_project_state(project_id: str):
+def load_project_state(project_id: str):
     """Load a project's saved state into session."""
     proj_dir = get_project_dir(project_id)
     state_file = os.path.join(proj_dir, "session_state.json")

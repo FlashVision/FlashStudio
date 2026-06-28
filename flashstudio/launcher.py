@@ -7,9 +7,40 @@ from pathlib import Path
 
 from flashstudio.utils.device import is_colab
 
+_STREAMLIT_CONFIG = """\
+[theme]
+primaryColor = "#7C3AED"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F8F9FB"
+textColor = "#1A1A2E"
+font = "sans serif"
+
+[server]
+headless = true
+port = 8501
+enableCORS = false
+enableXsrfProtection = false
+
+[client]
+showSidebarNavigation = false
+
+[browser]
+gatherUsageStats = false
+"""
+
 
 def _get_app_path() -> str:
     return str(Path(__file__).parent / "app.py")
+
+
+def _ensure_streamlit_config():
+    """Write the default Streamlit config if one doesn't already exist."""
+    config_dir = Path.home() / ".streamlit"
+    config_file = config_dir / "config.toml"
+    if config_file.exists():
+        return
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(_STREAMLIT_CONFIG)
 
 
 def launch(port: int = 8501, share: bool = True, ngrok_token: str | None = None):
@@ -20,6 +51,7 @@ def launch(port: int = 8501, share: bool = True, ngrok_token: str | None = None)
         share: If True and running in Colab, creates a public ngrok tunnel.
         ngrok_token: Optional ngrok auth token. If not provided, uses NGROK_TOKEN env var.
     """
+    _ensure_streamlit_config()
     app_path = _get_app_path()
 
     if is_colab():

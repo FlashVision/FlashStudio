@@ -4,7 +4,7 @@ import streamlit as st
 
 st.set_page_config(
     page_title="FlashStudio",
-    page_icon="⚡",
+    page_icon="FS",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -15,6 +15,7 @@ from flashstudio.components.wizard import render_step_indicator, render_navigati
 from flashstudio.components.project_manager import (  # noqa: E402
     get_active_project, render_project_manager_page,
     save_project_state, list_projects, create_project,
+    load_project_state,
 )
 from flashstudio.pages.dashboard import render_dashboard  # noqa: E402
 from flashstudio.pages.data import render_data_page  # noqa: E402
@@ -24,12 +25,12 @@ from flashstudio.pages.export import render_export_page  # noqa: E402
 from flashstudio.pages.inference import render_inference_page  # noqa: E402
 
 STEPS = [
-    {"id": "dashboard", "label": "Dashboard", "icon": "🏠"},
-    {"id": "data", "label": "Data", "icon": "📦"},
-    {"id": "model", "label": "Model", "icon": "🧠"},
-    {"id": "training", "label": "Training", "icon": "🏋️"},
-    {"id": "export", "label": "Export", "icon": "📤"},
-    {"id": "inference", "label": "Inference", "icon": "🔍"},
+    {"id": "dashboard", "label": "Dashboard", "icon": "1"},
+    {"id": "data", "label": "Data", "icon": "2"},
+    {"id": "model", "label": "Model", "icon": "3"},
+    {"id": "training", "label": "Training", "icon": "4"},
+    {"id": "export", "label": "Export", "icon": "5"},
+    {"id": "inference", "label": "Inference", "icon": "6"},
 ]
 
 PAGE_RENDERERS = {
@@ -57,6 +58,11 @@ def main():
         # First time user — show project creation
         _render_first_time_setup()
         return
+
+    # Load project state once on initial page load
+    if active_project and not st.session_state.get("_project_state_loaded"):
+        load_project_state(active_project["id"])
+        st.session_state["_project_state_loaded"] = True
 
     if st.session_state.get("show_project_manager"):
         render_project_manager_page()
@@ -87,7 +93,7 @@ def _render_first_time_setup():
     """Compact first-time project creation."""
     st.markdown(
         "<div style='text-align:center; padding:2rem 0 0.5rem;'>"
-        "<span style='font-size:2.5rem;'>⚡</span><br>"
+        "<b style='font-size:2.5rem;'>FS</b><br>"
         "<b style='font-size:1.3rem;'>Welcome to FlashStudio</b><br>"
         "<span style='color:#6B7280;font-size:0.9rem;'>Create your first project to get started</span>"
         "</div>",
@@ -99,12 +105,12 @@ def _render_first_time_setup():
         with col_form:
             name = st.text_input("Project Name", placeholder="e.g. Traffic Detection", key="first_project_name")
             desc = st.text_input("Description (optional)", placeholder="Detect vehicles in traffic footage", key="first_project_desc")
-            if st.button("🚀 Create & Start", type="primary", disabled=not name, use_container_width=True):
+            if st.button("Create and Start", type="primary", disabled=not name, use_container_width=True):
                 create_project(name, desc)
                 st.rerun()
         with col_info:
             st.markdown("#### What's a Project?")
-            for item in ["📦 Dataset", "🧠 Model config", "🏋️ Training runs", "📤 Exports", "🔍 Inference"]:
+            for item in ["Dataset management", "Model configuration", "Training runs", "Model exports", "Inference pipeline"]:
                 st.markdown(f'<span style="font-size:0.84rem;color:#4B5563;">{item}</span>', unsafe_allow_html=True)
 
 

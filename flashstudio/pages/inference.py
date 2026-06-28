@@ -56,23 +56,23 @@ COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
           "#DDA0DD", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E9"]
 
 SOLUTIONS = {
-    "None (Detection Only)": {"desc": "Standard object detection", "icon": "🔍", "needs_zone": False},
-    "Object Counter (Line)": {"desc": "Count objects crossing line", "icon": "🔢", "needs_zone": True, "zone_type": "line"},
-    "Region Counter (Polygon)": {"desc": "Count in polygon zones", "icon": "📐", "needs_zone": True, "zone_type": "polygon"},
-    "Speed Estimator": {"desc": "Estimate speed", "icon": "⚡", "needs_zone": True, "zone_type": "line"},
-    "Heatmap": {"desc": "Activity heatmap", "icon": "🔥", "needs_zone": False},
-    "Security Alarm (Zone)": {"desc": "Alert on zone entry", "icon": "🚨", "needs_zone": True, "zone_type": "polygon"},
-    "Trajectory Visualizer": {"desc": "Motion trails", "icon": "🎯", "needs_zone": False},
-    "Object Blurrer": {"desc": "Blur detections", "icon": "🙈", "needs_zone": False},
-    "Queue Manager": {"desc": "Queue lengths", "icon": "🧍", "needs_zone": True, "zone_type": "polygon"},
-    "Crowd Density": {"desc": "Grid density", "icon": "👥", "needs_zone": False},
-    "Parking Manager": {"desc": "Parking occupancy", "icon": "🅿️", "needs_zone": True, "zone_type": "polygon"},
-    "Traffic Flow": {"desc": "Traffic analysis", "icon": "🚗", "needs_zone": True, "zone_type": "line"},
-    "Dwell Time Analyzer": {"desc": "Time in zones", "icon": "⏱️", "needs_zone": True, "zone_type": "polygon"},
-    "Distance Calculator": {"desc": "Pairwise distances", "icon": "📏", "needs_zone": False},
-    "Workout Monitor": {"desc": "Exercise reps", "icon": "🏋️", "needs_zone": False},
-    "Object Cropper": {"desc": "Crop detections", "icon": "✂️", "needs_zone": False},
-    "Analytics Dashboard": {"desc": "Real-time stats", "icon": "📊", "needs_zone": False},
+    "None (Detection Only)": {"desc": "Standard object detection", "needs_zone": False},
+    "Object Counter (Line)": {"desc": "Count objects crossing line", "needs_zone": True, "zone_type": "line"},
+    "Region Counter (Polygon)": {"desc": "Count in polygon zones", "needs_zone": True, "zone_type": "polygon"},
+    "Speed Estimator": {"desc": "Estimate speed", "needs_zone": True, "zone_type": "line"},
+    "Heatmap": {"desc": "Activity heatmap", "needs_zone": False},
+    "Security Alarm (Zone)": {"desc": "Alert on zone entry", "needs_zone": True, "zone_type": "polygon"},
+    "Trajectory Visualizer": {"desc": "Motion trails", "needs_zone": False},
+    "Object Blurrer": {"desc": "Blur detections", "needs_zone": False},
+    "Queue Manager": {"desc": "Queue lengths", "needs_zone": True, "zone_type": "polygon"},
+    "Crowd Density": {"desc": "Grid density", "needs_zone": False},
+    "Parking Manager": {"desc": "Parking occupancy", "needs_zone": True, "zone_type": "polygon"},
+    "Traffic Flow": {"desc": "Traffic analysis", "needs_zone": True, "zone_type": "line"},
+    "Dwell Time Analyzer": {"desc": "Time in zones", "needs_zone": True, "zone_type": "polygon"},
+    "Distance Calculator": {"desc": "Pairwise distances", "needs_zone": False},
+    "Workout Monitor": {"desc": "Exercise reps", "needs_zone": False},
+    "Object Cropper": {"desc": "Crop detections", "needs_zone": False},
+    "Analytics Dashboard": {"desc": "Real-time stats", "needs_zone": False},
 }
 
 
@@ -89,14 +89,16 @@ def _get_device_options():
 
 
 def render_inference_page():
+    from flashstudio.utils import show_flashes
     render_page_header("", "Inference")
+    show_flashes()
 
     # Readiness dots
     has_model = bool(st.session_state.get("infer_weights_file") or st.session_state.get("infer_weights_path"))
     has_data = bool(st.session_state.get("infer_images") or st.session_state.get("infer_video") or st.session_state.get("infer_stream_url"))
     sol = SOLUTIONS.get(st.session_state.get("selected_solution", "None (Detection Only)"), {})
     has_zone = not sol.get("needs_zone") or bool(st.session_state.get("zone_line_points") or st.session_state.get("zone_polygons"))
-    dot = lambda ok: "🟢" if ok else "🔴"
+    dot = lambda ok: '<span style="color:#22C55E;">&#9679;</span>' if ok else '<span style="color:#EF4444;">&#9679;</span>'
     st.markdown(
         f'<div class="ds-card-stats" style="padding:0.2rem 0;">'
         f'<span>{dot(has_model)} Model</span>'
@@ -127,7 +129,7 @@ def _tab_model():
     with col1:
         with st.container(border=True):
             st.markdown("#### Architecture & Params")
-            st.selectbox("Model", ["FlashDet-Pico", "FlashDet-Nano", "FlashDet-Small", "FlashDet-Medium", "FlashDet-Large"],
+            st.selectbox("Model", ["FlashDet-Pico", "FlashDet-Nano", "FlashDet-Small", "FlashDet-Medium", "FlashDet-Large", "FlashDet-X"],
                          key="infer_model_arch")
             pc1, pc2 = st.columns(2)
             with pc1:
@@ -150,7 +152,7 @@ def _tab_model():
             elif ws == "Path":
                 st.text_input("Path", placeholder="/path/best.pth", key="infer_weights_path")
             else:
-                p = f"{st.session_state.get('save_dir', 'flashstudio_runs')}/model_best_inference.pth"
+                p = f"{st.session_state.get('save_dir', 'workspace')}/model_best_inference.pth"
                 st.session_state["infer_weights_path"] = p
                 st.caption(f"Using: `{p}`")
 
@@ -210,7 +212,7 @@ def _tab_solution():
     sc1, sc2 = st.columns([2, 3])
     with sc1:
         selected = st.selectbox("Solution", list(SOLUTIONS.keys()), key="selected_solution",
-                                format_func=lambda x: f"{SOLUTIONS[x]['icon']} {x}")
+                                format_func=lambda x: x)
         sol = SOLUTIONS[selected]
         st.caption(sol["desc"])
 
@@ -235,10 +237,13 @@ def _zone_draw_ui(sol):
     existing_points = st.session_state.get("zone_draw_points", [])
     existing_closed = st.session_state.get("zone_closed", False)
 
-    zone_drawer(image=frame_img, mode=draw_mode, points=existing_points,
-                closed=existing_closed, display_width=650)
+    if _HAS_ZONE_DRAWER:
+        zone_drawer(image=frame_img, mode=draw_mode, points=existing_points,
+                    closed=existing_closed, display_width=650)
+    else:
+        st.warning("Zone drawing component not available.")
 
-    with st.expander("Set coordinates manually", expanded=False):
+    with st.expander("Set coordinates manually", expanded=not _HAS_ZONE_DRAWER):
         _manual_zone_input(draw_mode)
 
 
@@ -256,7 +261,9 @@ def _manual_zone_input(draw_mode):
             st.success(f"({x1},{y1}) → ({x2},{y2})")
     else:
         pts = st.text_area("Points (x,y per line)", "100,100\n500,100\n500,400\n100,400", key="manual_polygon_text")
-        if st.button("Set Polygon", key="set_manual_polygon"):
+        btn_label = "Set Rectangle" if draw_mode == "rect" else "Set Polygon"
+        min_pts = 2 if draw_mode == "rect" else 3
+        if st.button(btn_label, key="set_manual_polygon"):
             parsed = []
             for line in pts.strip().split("\n"):
                 p = line.strip().split(",")
@@ -265,9 +272,14 @@ def _manual_zone_input(draw_mode):
                         parsed.append((int(p[0].strip()), int(p[1].strip())))
                     except ValueError:
                         continue
-            if len(parsed) >= 3:
-                st.session_state["zone_polygons"] = [parsed]
-                st.success(f"{len(parsed)} vertices")
+            if len(parsed) >= min_pts:
+                if draw_mode == "rect" and len(parsed) >= 2:
+                    x1, y1 = parsed[0]; x2, y2 = parsed[1]
+                    st.session_state["zone_polygons"] = [[(x1, y1), (x2, y1), (x2, y2), (x1, y2)]]
+                    st.success(f"Rectangle: ({x1},{y1}) → ({x2},{y2})")
+                else:
+                    st.session_state["zone_polygons"] = [parsed]
+                    st.success(f"{len(parsed)} vertices")
 
 
 def _store_zone_coords(display_points, draw_mode, scale_x, scale_y):

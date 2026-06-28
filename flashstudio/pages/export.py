@@ -6,7 +6,9 @@ import streamlit as st
 
 def render_export_page():
     from flashstudio.components.styles import render_page_header
+    from flashstudio.utils import show_flashes
     render_page_header("", "Export")
+    show_flashes()
 
     # Two-panel: Config | Output
     left, right = st.columns(2)
@@ -16,12 +18,17 @@ def render_export_page():
             st.markdown("#### Weights")
             save_dir = st.session_state.get("save_dir", "")
             if save_dir and os.path.isdir(save_dir):
-                wts = [f for f in os.listdir(save_dir) if f.endswith(".pth")]
+                wts = []
+                for root, _dirs, files in os.walk(save_dir):
+                    for f in files:
+                        if f.endswith(".pth"):
+                            wts.append(os.path.join(root, f))
                 if wts:
                     cols = st.columns(min(len(wts), 4))
-                    for i, w in enumerate(sorted(wts)[:4]):
-                        sz = os.path.getsize(os.path.join(save_dir, w)) / (1024 * 1024)
-                        lbl = "Best" if "best" in w else ("Last" if "last" in w else w[:6])
+                    for i, wp_disp in enumerate(sorted(wts)[:4]):
+                        sz = os.path.getsize(wp_disp) / (1024 * 1024)
+                        bn = os.path.basename(wp_disp)
+                        lbl = "Best" if "best" in bn else ("Last" if "last" in bn else bn[:6])
                         with cols[i]:
                             st.metric(lbl, f"{sz:.1f}MB")
 
@@ -31,9 +38,20 @@ def render_export_page():
             if src == "Custom":
                 st.text_input("Path", placeholder="model.pth", key="export_weights_path")
 
-            sd = st.session_state.get("save_dir", os.path.join(os.getcwd(), "flashstudio_runs"))
-            wmap = {"Best (inference)": "model_best_inference.pth", "Best (FP16)": "model_best_fp16.pth", "Last": "model_last_inference.pth"}
-            wp = os.path.join(sd, wmap.get(src, "")) if src != "Custom" else st.session_state.get("export_weights_path", "")
+            sd = st.session_state.get("save_dir", os.path.join(os.getcwd(), "workspace"))
+            wmap = {"Best (inference)": "checkpoint_best.pth", "Best (FP16)": "model_best_fp16.pth", "Last": "checkpoint_last.pth"}
+            if src != "Custom":
+                target = wmap.get(src, "")
+                wp = ""
+                if os.path.isdir(sd):
+                    for root, _dirs, files in os.walk(sd):
+                        if target in files:
+                            wp = os.path.join(root, target)
+                            break
+                if not wp:
+                    wp = os.path.join(sd, target)
+            else:
+                wp = st.session_state.get("export_weights_path", "")
 
             oc = st.columns(3)
             with oc[0]:
@@ -52,8 +70,8 @@ def render_export_page():
             exported = st.session_state.get("exported_files", [])
             if not exported:
                 st.caption("Auto-saved weights from training:")
-                for n, d in [("best_inference.pth", "Best, FP32"), ("best_fp16.pth", "Best, FP16"),
-                              ("last_inference.pth", "Final, FP32"), ("last_fp16.pth", "Final, FP16")]:
+                for n, d in [("checkpoint_best.pth", "Best, FP32"), ("model_best_fp16.pth", "Best, FP16"),
+                              ("checkpoint_last.pth", "Final, FP32")]:
                     st.markdown(f'<span style="font-size:0.82rem;color:#4B5563;">• `{n}` — {d}</span>', unsafe_allow_html=True)
                 st.caption("Manual:")
                 st.code("flashdet export --model model.pth --output model.onnx", language="bash")
@@ -72,8 +90,12 @@ def render_export_page():
 
 
 def _run_export(weights_path, img_size, opset=13, dynamic=True):
+    from flashstudio.utils import flash
+
     if not weights_path or not os.path.isfile(weights_path):
-        st.error("Weights not found."); return
+        flash(f"Weights not found: `{weights_path}`", "error")
+        st.rerun()
+        return
 
     import torch
     from flashdet import get_config, build_model
@@ -93,7 +115,8 @@ def _run_export(weights_path, img_size, opset=13, dynamic=True):
             torch.onnx.export(model, dummy, out, opset_version=opset, input_names=["images"], output_names=["output"], dynamic_axes=dyn)
             sz = f"{os.path.getsize(out) / (1024*1024):.1f}MB" if os.path.isfile(out) else "—"
             st.session_state["exported_files"] = [{"format": "ONNX", "path": out, "size": sz, "success": True}]
+            flash(f"Export successful: `{os.path.basename(out)}` ({sz})", "success")
         except Exception as e:
-            st.error(f"Failed: {e}")
+            flash(f"Export failed: {e}", "error")
             st.session_state["exported_files"] = [{"format": "ONNX", "path": out, "size": "—", "success": False}]
     st.rerun()
