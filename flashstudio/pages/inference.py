@@ -89,12 +89,7 @@ def _get_device_options():
 
 
 def render_inference_page():
-    # #region agent log
-    import json as _json_dbg, time as _time_dbg
-    with open("/home/ggoswami/Project/Gaurav/FlashVision/FlashStudio/.cursor/debug-b7c49a.log", "a") as _f_dbg:
-        _f_dbg.write(_json_dbg.dumps({"sessionId":"b7c49a","location":"inference.py:render_inference_page","message":"inference_page_entry","data":{"has_zone_drawer":_HAS_ZONE_DRAWER,"has_predictor":_HAS_PREDICTOR,"solutions_available":list(_SOLUTIONS_AVAILABLE.keys())},"timestamp":int(_time_dbg.time()*1000),"hypothesisId":"H4"})+"\n")
-    # #endregion
-    render_page_header("🔍", "Inference")
+    render_page_header("", "Inference")
 
     # Readiness dots
     has_model = bool(st.session_state.get("infer_weights_file") or st.session_state.get("infer_weights_path"))
@@ -239,12 +234,6 @@ def _zone_draw_ui(sol):
 
     existing_points = st.session_state.get("zone_draw_points", [])
     existing_closed = st.session_state.get("zone_closed", False)
-
-    # #region agent log
-    import json as _json_dbg, time as _time_dbg
-    with open("/home/ggoswami/Project/Gaurav/FlashVision/FlashStudio/.cursor/debug-b7c49a.log", "a") as _f_dbg:
-        _f_dbg.write(_json_dbg.dumps({"sessionId":"b7c49a","location":"inference.py:_zone_draw_ui","message":"zone_draw_ui_call","data":{"has_zone_drawer":_HAS_ZONE_DRAWER,"draw_mode":draw_mode,"has_frame_img":frame_img is not None,"frame_img_size":str(frame_img.size) if frame_img else "None","points_count":len(existing_points),"closed":existing_closed,"sol_name":sol.get("desc","")},"timestamp":int(_time_dbg.time()*1000),"hypothesisId":"H3"})+"\n")
-    # #endregion
 
     zone_drawer(image=frame_img, mode=draw_mode, points=existing_points,
                 closed=existing_closed, display_width=650)

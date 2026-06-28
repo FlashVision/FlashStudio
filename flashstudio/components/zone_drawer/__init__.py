@@ -51,12 +51,6 @@ def zone_drawer(
     html = _build_html(image_data, mode, points or [], closed,
                        display_width, display_height, img_width, img_height)
 
-    # #region agent log
-    import json as _json_dbg, time as _time_dbg
-    with open("/home/ggoswami/Project/Gaurav/FlashVision/FlashStudio/.cursor/debug-b7c49a.log", "a") as _f_dbg:
-        _f_dbg.write(_json_dbg.dumps({"sessionId":"b7c49a","location":"zone_drawer/__init__.py:zone_drawer","message":"zone_drawer_render","data":{"has_image":image_data is not None,"mode":mode,"display_width":display_width,"display_height":display_height,"total_height":total_height,"img_width":img_width,"img_height":img_height,"html_len":len(html)},"timestamp":int(_time_dbg.time()*1000),"hypothesisId":"H3"})+"\n")
-    # #endregion
-
     result = components.html(html, height=total_height, scrolling=False)
     return None
 

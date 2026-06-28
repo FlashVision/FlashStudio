@@ -22,6 +22,52 @@
 
 ---
 
+## UI Tour
+
+### Dashboard
+Project overview with key metrics (GPU, Dataset, Model, mAP), pipeline status, quick actions, and recent training runs.
+
+<p align="center">
+  <img src="demos/01_dashboard.gif" width="800" alt="Dashboard"/>
+</p>
+
+### Data Management
+Upload datasets (ZIP/TAR), download from `flashdet` registry, preview images with navigation, and verify annotations.
+
+<p align="center">
+  <img src="demos/02_data.gif" width="800" alt="Data Management"/>
+</p>
+
+### Model Configuration
+Choose from 6 FlashDet sizes + YOLO variants. Configure hyperparameters, augmentations, and advanced settings (memory optimization, distributed training).
+
+<p align="center">
+  <img src="demos/03_model.gif" width="800" alt="Model Configuration"/>
+</p>
+
+### Training
+Create experiments, launch training with preflight checks, and monitor runs with real-time curves, visualizations, ground truth, logs, and file browser.
+
+<p align="center">
+  <img src="demos/04_training.gif" width="800" alt="Training"/>
+</p>
+
+### Export
+Export trained models to ONNX format with configurable opset, image size, and dynamic batching. Auto-detects saved weights from training.
+
+<p align="center">
+  <img src="demos/05_export.gif" width="800" alt="Export"/>
+</p>
+
+### Inference
+Full inference pipeline with 17 built-in solutions (object counting, speed estimation, heatmaps, security alarms, etc.). Interactive zone drawing with Polygon, Rectangle, and Line tools.
+
+<p align="center">
+  <img src="demos/06_inference.gif" width="800" alt="Inference"/>
+</p>
+
+---
+
 ## Installation
 
 ### Step 1: Install FlashStudio

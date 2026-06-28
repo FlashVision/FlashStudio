@@ -7,6 +7,7 @@ build/
 .eggs/
 *.egg
 .env
+.env.*
 .venv/
 venv/
 .ruff_cache/
@@ -15,4 +16,14 @@ venv/
 data/voc2012/
 data/coco2017/
 data/sample/
+data/coco128_tiny_subset/
 .cursor/
+demos/_frames/
+*.log
+flashstudio_runs/
+*.flashstudio/
+*.pt
+*.pth
+*.onnx
+*.engine
+*.trt
