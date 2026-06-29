@@ -32,9 +32,46 @@ def get_default(key: str):
 
 
 def get_state(key: str):
-    """Get a session state value with central default fallback."""
+    """Get a session state value with config mirror fallback.
+
+    Priority: _config_mirror > session_state > DEFAULTS.
+    Mirror is kept fresh by update_config_mirror() on every Model page render,
+    so it always holds the latest user choices.  Mirror wins over session_state
+    because Streamlit drops widget keys when navigating away, and
+    _ensure_config_in_session may re-seed stale values from the project file.
+    """
     import streamlit as st
+    mirror = st.session_state.get("_config_mirror", {})
+    if key in mirror:
+        return mirror[key]
     return st.session_state.get(key, DEFAULTS.get(key))
+
+
+def update_config_mirror():
+    """Sync _config_mirror with current session_state values.
+
+    Call this after Model page renders so the mirror always holds the
+    latest user choices, surviving page navigations that clear widget keys.
+    """
+    import streamlit as st
+    mirror_keys = [
+        "epochs", "batch_size", "lr", "img_size", "weight_decay",
+        "warmup_epochs", "patience", "num_workers", "grad_accum",
+        "val_interval", "lr_final_ratio", "optimizer",
+        "model_arch", "arch_family", "pico_backbone",
+        "amp", "grad_clip", "multiscale",
+        "aug_mosaic", "aug_mixup", "aug_copypaste",
+        "finetune_strategy", "pretrain_option", "custom_weights",
+        "lora_variant", "lora_rank", "lora_alpha", "lora_dropout", "lora_targets",
+        "activation_checkpointing", "activation_offloading", "optimizer_in_bwd",
+        "compile_model", "use_8bit_optimizer", "ddp", "chunked_loss", "chunk_size",
+        "save_dir", "save_best", "resume_training",
+    ]
+    mirror = st.session_state.get("_config_mirror", {})
+    for k in mirror_keys:
+        if k in st.session_state:
+            mirror[k] = st.session_state[k]
+    st.session_state["_config_mirror"] = mirror
 
 from flashstudio.utils.device import (
     is_colab,
@@ -94,6 +131,7 @@ __all__ = [
     "DEFAULTS",
     "get_default",
     "get_state",
+    "update_config_mirror",
     "is_colab",
     "get_device",
     "get_gpu_info",

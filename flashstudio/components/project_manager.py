@@ -257,7 +257,8 @@ def get_project_stats(project_id: str) -> dict:
                 except Exception:
                     pass
             if best_map == 0:
-                logs = glob.glob(os.path.join(rd, "train_*.log"))
+                from flashstudio.constants import TRAINING_LOG_GLOB
+                logs = glob.glob(os.path.join(rd, TRAINING_LOG_GLOB))
                 for lf in logs:
                     try:
                         with open(lf, "r", encoding="utf-8", errors="replace") as f:
@@ -324,8 +325,8 @@ def render_project_selector():
 def render_project_manager_page():
     """Full project management page — create, switch, delete, manage projects."""
     st.markdown(
-        "<div style='text-align:center; padding:1rem 0;'>"
-        "<b style='font-size:1.4rem;'>Project Manager</b>"
+        "<div style='text-align:center; padding:0.4rem 0;'>"
+        "<b style='font-size:1.2rem;'>Project Manager</b>"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -336,7 +337,7 @@ def render_project_manager_page():
 
     # ─── Create New Project ───
     with st.container(border=True):
-        st.markdown("### Create New Project")
+        st.markdown("#### Create New Project")
         col_name, col_desc, col_btn = st.columns([2, 3, 1])
         with col_name:
             new_name = st.text_input("Project Name", placeholder="e.g. PPE Detection v2",
@@ -359,8 +360,9 @@ def render_project_manager_page():
         st.info("No projects yet. Create your first project above to get started.")
         return
 
-    st.markdown(f"### Your Projects ({len(projects)})")
+    st.markdown(f"#### Your Projects ({len(projects)})")
 
+    st.markdown('<div style="max-height:calc(100vh - 22rem);overflow-y:auto;scrollbar-width:thin;">', unsafe_allow_html=True)
     for p in sorted(projects, key=lambda x: x.get("last_modified", ""), reverse=True):
         is_active = p["id"] == active_id
         proj_dir = get_project_dir(p["id"])
@@ -419,6 +421,8 @@ def render_project_manager_page():
                     if st.button("Cancel", key=f"cancel_del_{p['id']}"):
                         st.session_state.pop(f"confirm_delete_{p['id']}", None)
                         st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ─── Danger Zone ───
     st.divider()

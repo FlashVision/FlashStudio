@@ -9,13 +9,33 @@ def inject_custom_css():
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-    /* ═══════ GLOBAL ═══════ */
-    .stApp { font-family: 'Inter', -apple-system, sans-serif; }
+    /* ═══════ GLOBAL — NO SCROLL ═══════ */
+    .stApp {
+        font-family: 'Inter', -apple-system, sans-serif;
+        overflow: hidden !important;
+        height: 100vh !important;
+    }
+
+    .main {
+        overflow: hidden !important;
+        height: 100vh !important;
+    }
 
     .main .block-container {
         padding: 0.8rem 1.5rem 0.5rem !important;
         max-width: 1500px;
+        height: calc(100vh - 2rem) !important;
+        overflow: hidden !important;
     }
+
+    /* Allow internal scroll on specific containers */
+    .scrollable-panel {
+        overflow-y: auto !important;
+        scrollbar-width: thin;
+        scrollbar-color: #D1D5DB transparent;
+    }
+    .scrollable-panel::-webkit-scrollbar { width: 4px; }
+    .scrollable-panel::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 2px; }
 
     .main .stMarkdown { margin-bottom: 0 !important; }
     .main .element-container { margin-bottom: 0.15rem !important; }
@@ -151,6 +171,17 @@ def inject_custom_css():
         font-weight: 600;
         border-bottom: 2px solid #7C3AED !important;
     }
+
+    /* Tab content area: constrain height to prevent page scroll */
+    .stTabs [data-baseweb="tab-panel"] {
+        max-height: calc(100vh - 12rem) !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        scrollbar-width: thin;
+        scrollbar-color: #D1D5DB transparent;
+    }
+    .stTabs [data-baseweb="tab-panel"]::-webkit-scrollbar { width: 4px; }
+    .stTabs [data-baseweb="tab-panel"]::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 2px; }
 
     /* ═══════ FORM INPUTS ═══════ */
     .main .stSelectbox > div > div,

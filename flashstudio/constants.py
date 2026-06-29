@@ -124,6 +124,13 @@ VIS_QUEUE_SIZE = 3
 VIS_DIR_NAMES = ("visualizations", "plots", "vis")
 VIS_SKIP_FILE = "latest_visualization.jpg"
 GT_VERIFICATION_DIR = "gt_verification"
+GT_REPORT_FILE = "verification_report.json"
+GT_SUMMARY_FILE = "verification_summary.txt"
+TRAINING_LOG_GLOB = "train_*.log"
+ONNX_MODEL_FILE = "model.onnx"
+ONNX_DATA_FILE = "model.onnx.data"
+CONFIG_YAML_FILE = "config.yaml"
+RESULTS_JSON_FILE = "results.json"
 
 # ════════════════════════════════════════
 # MODEL ARCHITECTURE
@@ -135,7 +142,16 @@ MODEL_SIZE_DEFAULT = "n"
 
 ARCH_FAMILIES = ["FlashDet (recommended)", "YOLOv8", "YOLOv9", "YOLOv10", "YOLOv11", "YOLOX"]
 OPTIMIZERS = ["AdamW", "SGD", "MuSGD"]
+DEFAULT_OPTIMIZER = "AdamW"
 LORA_VARIANTS = ["standard", "dora", "lora_plus", "adalora", "ortho", "lora_fa"]
+LORA_RANK_DEFAULT = 8
+LORA_ALPHA_DEFAULT = 16.0
+LORA_DROPOUT_DEFAULT = 0.05
+LORA_TARGETS_DEFAULT = ["backbone", "fpn"]
+QLORA_DTYPE_DEFAULT = "int8"
+CHUNKED_LOSS_CHUNK_SIZE = 1024
+DEFAULT_FINETUNE_STRATEGY = "Full fine-tune"
+DEFAULT_PRETRAIN_OPTION = "COCO pretrained"
 
 FLASHDET_MODELS = {
     "FlashDet-Pico": {"size": "p", "params": "~298K", "speed": "Ultra-fast", "backbone": "LiteBackbone(0.5x)", "neck": "PicoNeck(64ch)", "head": "E2EDualHead", "for": "Edge/Mobile"},
@@ -159,7 +175,25 @@ ZONE_DEFAULT_POLYGON = "100,100\n500,100\n500,400\n100,400"
 # FONT
 # ════════════════════════════════════════
 
-FONT_PATH_LINUX = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+def _resolve_font_path():
+    """Find a usable TrueType font across platforms, with env override."""
+    env = os.environ.get("FLASHSTUDIO_FONT_PATH", "")
+    if env and os.path.isfile(env):
+        return env
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",       # Debian/Ubuntu
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",      # Fedora/RHEL
+        "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",                    # Arch
+        "/System/Library/Fonts/Helvetica.ttc",                         # macOS
+        "C:\\Windows\\Fonts\\arial.ttf",                               # Windows
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return ""
+
+FONT_PATH = _resolve_font_path()
+FONT_PATH_LINUX = FONT_PATH  # backward compat alias
 FONT_SIZE_DEFAULT = 14
 
 # ════════════════════════════════════════

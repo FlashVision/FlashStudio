@@ -201,26 +201,93 @@ Click the **Public URL** to open FlashStudio in a new tab.
 ```
 FlashStudio/
 ├── flashstudio/
-│   ├── __init__.py              # Package init + launch() export
-│   ├── app.py                   # Main Streamlit app (wizard flow)
-│   ├── launcher.py              # Colab/local launcher with ngrok
-│   ├── cli.py                   # CLI entrypoint
-│   ├── pages/
-│   │   ├── dashboard.py         # Overview + recent training runs
-│   │   ├── data.py              # Dataset upload/download
-│   │   ├── model.py             # Architecture & hyperparameter config
-│   │   ├── training.py          # Training monitor (reads real workspace)
-│   │   ├── export.py            # ONNX export
-│   │   └── inference.py         # 4-step inference pipeline
+│   ├── __init__.py                  # Package init + launch() export
+│   ├── app.py                       # Main Streamlit app (wizard flow)
+│   ├── launcher.py                  # Colab/local launcher with ngrok
+│   ├── cli.py                       # CLI entrypoint
+│   ├── constants.py                 # Centralized constants (paths, defaults, models)
+│   │
+│   ├── pages/                       # Each page is a sub-package
+│   │   ├── dashboard/
+│   │   │   ├── page.py              # Main dashboard render
+│   │   │   ├── pipeline_status.py   # Pipeline status cards
+│   │   │   └── recent_runs.py       # Recent training runs table
+│   │   ├── data/
+│   │   │   ├── page.py              # Main data page render
+│   │   │   ├── upload.py            # Upload tab (ZIP/TAR + class config)
+│   │   │   ├── download.py          # Download tab (quick start + registries)
+│   │   │   ├── preview.py           # Preview tab (image grid + annotations)
+│   │   │   ├── verify.py            # Verify tab (dataset validation)
+│   │   │   └── helpers.py           # Shared helpers (extract, detect, convert)
+│   │   ├── model/
+│   │   │   ├── page.py              # Main model page render
+│   │   │   ├── architecture.py      # Architecture tab (FlashDet/YOLO selection)
+│   │   │   ├── hyperparams.py       # Hyperparameters tab
+│   │   │   ├── augmentation.py      # Augmentation tab
+│   │   │   ├── advanced.py          # Advanced tab (memory, distributed)
+│   │   │   └── summary.py           # Config summary bar + YAML save/load
+│   │   ├── training/
+│   │   │   ├── page.py              # Main training page render
+│   │   │   ├── _common.py           # Shared utilities (_get_save_dir)
+│   │   │   ├── launch/              # Launch sub-package
+│   │   │   │   ├── tab.py           # Launch tab entry point
+│   │   │   │   ├── preflight.py     # Pre-flight checks
+│   │   │   │   ├── runner.py        # FlashDet Trainer subprocess
+│   │   │   │   ├── controls.py      # Start/stop/pause/resume buttons
+│   │   │   │   └── dialogs.py       # Clean/resume/config dialogs
+│   │   │   └── monitor/             # Monitor sub-package
+│   │   │       ├── tab.py           # Monitor tab entry point
+│   │   │       ├── run_meta.py      # Run metadata extraction
+│   │   │       ├── parsers.py       # CSV/log parsing
+│   │   │       ├── dashboard.py     # Run dashboard + metrics
+│   │   │       ├── curves.py        # Plotly training curves
+│   │   │       ├── visualizations.py # Epoch visualizations
+│   │   │       ├── gt_verification.py # Ground truth verification
+│   │   │       ├── log_viewer.py    # Full log viewer
+│   │   │       └── checkpoints.py   # File browser + checkpoints
+│   │   ├── export/
+│   │   │   └── page.py              # Export page (ONNX/TorchScript)
+│   │   └── inference/
+│   │       ├── page.py              # Main inference page render
+│   │       ├── model_tab.py         # Model selection tab
+│   │       ├── data_tab.py          # Data input tab (images/video/RTSP)
+│   │       ├── solution_tab.py      # Solution selection + zone drawing
+│   │       ├── run_tab.py           # Run tab + results display
+│   │       ├── detection.py         # Detection utilities (real + demo)
+│   │       └── video.py             # Video/image inference runners
+│   │
 │   ├── components/
-│   │   ├── sidebar.py           # Navigation sidebar
-│   │   ├── styles.py            # Custom CSS
-│   │   └── wizard.py            # Step indicator & navigation
+│   │   ├── sidebar.py               # Navigation sidebar
+│   │   ├── styles.py                # Custom CSS + UI helpers
+│   │   ├── wizard.py                # Step indicator + navigation
+│   │   ├── project_manager.py       # Project CRUD + state persistence
+│   │   └── zone_drawer/             # Interactive canvas zone drawing
+│   │
 │   └── utils/
-│       └── device.py            # GPU/environment detection
+│       ├── __init__.py              # Shared helpers (defaults, state, flash)
+│       ├── device.py                # GPU/environment detection
+│       ├── jobs.py                  # Background process tracking
+│       ├── filesystem.py            # Directory size/listing utilities
+│       ├── config.py                # Training config build/save/load
+│       └── training_hooks.py        # FlashDet training callbacks
+│
+├── tests/                           # Pytest test suite
+│   ├── conftest.py                  # Shared fixtures
+│   ├── test_constants.py            # Constants validation
+│   ├── test_cli.py                  # CLI tests
+│   ├── test_utils/                  # Utils sub-package tests
+│   │   ├── test_init.py
+│   │   ├── test_device.py
+│   │   ├── test_filesystem.py
+│   │   ├── test_config.py
+│   │   └── test_jobs.py
+│   ├── test_pages/                  # Page logic tests
+│   │   └── test_training_parsers.py
+│   └── test_components/
+│       └── test_project_manager.py
+│
+├── .github/workflows/ci.yml        # GitHub Actions CI
 ├── notebooks/
-│   ├── FlashStudio_Train.ipynb
-│   └── FlashStudio_Inference.ipynb
 ├── .streamlit/config.toml
 ├── pyproject.toml
 └── README.md

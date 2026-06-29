@@ -1,0 +1,1 @@
+"""FlashStudio test suite."""

@@ -84,8 +84,9 @@ def config_to_yaml_str(config: dict) -> str:
 
 def get_pipeline_steps() -> list:
     """Generate pipeline step descriptions based on current config."""
-    model = st.session_state.get("model_arch", "FlashDet-Pico")
-    epochs = st.session_state.get("epochs", 100)
+    from flashstudio.utils import get_state
+    model = get_state("model_arch")
+    epochs = get_state("epochs")
     return [
         {"step": 1, "action": "load_dataset", "description": "Load and validate dataset"},
         {"step": 2, "action": "convert_format", "description": "Convert to COCO JSON if needed"},
