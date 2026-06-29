@@ -105,10 +105,12 @@ def create_project(name: str, description: str = "") -> dict:
 
 def switch_project(project_id: str):
     """Switch active project and load its state."""
+    _clear_session_for_new_project()
     index = _load_index()
     index["active"] = project_id
     _save_index(index)
     load_project_state(project_id)
+    st.session_state["_project_state_loaded"] = True
 
 
 def delete_project(project_id: str):
@@ -203,6 +205,8 @@ def load_project_state(project_id: str):
 
 def duplicate_project(project_id: str, new_name: str) -> dict:
     """Duplicate an existing project with a new name."""
+    index = _load_index()
+    prev_active = index.get("active")
     src_dir = get_project_dir(project_id)
     new_project = create_project(new_name)
     dst_dir = get_project_dir(new_project["id"])
@@ -219,6 +223,12 @@ def duplicate_project(project_id: str, new_name: str) -> dict:
     src_state = os.path.join(src_dir, "session_state.json")
     if os.path.isfile(src_state):
         shutil.copy2(src_state, os.path.join(dst_dir, "session_state.json"))
+
+    # Restore previously active project so duplication doesn't switch context
+    if prev_active and prev_active != new_project["id"]:
+        idx = _load_index()
+        idx["active"] = prev_active
+        _save_index(idx)
 
     return new_project
 
@@ -301,7 +311,6 @@ def render_project_selector():
         return False  # No projects exist — show creation UI
 
     # Quick selector
-    {p["id"]: p["name"] for p in projects}
     active_idx = 0
     for i, p in enumerate(projects):
         if p["id"] == active_id:
@@ -364,10 +373,8 @@ def render_project_manager_page():
 
     st.markdown(f"#### Your Projects ({len(projects)})")
 
-    st.markdown('<div style="max-height:calc(100vh - 22rem);overflow-y:auto;scrollbar-width:thin;">', unsafe_allow_html=True)
     for p in sorted(projects, key=lambda x: x.get("last_modified", ""), reverse=True):
         is_active = p["id"] == active_id
-        get_project_dir(p["id"])
         stats = get_project_stats(p["id"])
 
         with st.container(border=True):
@@ -422,8 +429,6 @@ def render_project_manager_page():
                     if st.button("Cancel", key=f"cancel_del_{p['id']}"):
                         st.session_state.pop(f"confirm_delete_{p['id']}", None)
                         st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
     # ─── Danger Zone ───
     st.divider()

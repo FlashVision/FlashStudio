@@ -147,6 +147,8 @@ def _make_palette(n):
 class StudioCSVLogger(Callback):
     """Callback that saves training_log.csv compatible with the dashboard parser."""
 
+    FIELDNAMES = ["epoch", "train_loss", "lr", "val_loss", "mAP@0.5"]
+
     def __init__(self, save_dir: str):
         from flashstudio.constants import TRAINING_LOG_CSV
         self.csv_path = os.path.join(save_dir, TRAINING_LOG_CSV)
@@ -165,13 +167,13 @@ class StudioCSVLogger(Callback):
 
         if not self._initialized:
             with open(self.csv_path, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=row.keys())
+                writer = csv.DictWriter(f, fieldnames=self.FIELDNAMES)
                 writer.writeheader()
                 writer.writerow(row)
             self._initialized = True
         else:
             with open(self.csv_path, "a", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=row.keys())
+                writer = csv.DictWriter(f, fieldnames=self.FIELDNAMES)
                 writer.writerow(row)
 
 

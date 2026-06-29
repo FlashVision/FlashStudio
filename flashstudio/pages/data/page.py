@@ -30,7 +30,9 @@ def render_data_page():
             if st.button("Clear", key="clear_dataset_btn", use_container_width=True):
                 from flashstudio.utils import flash
                 for k in ["dataset_name", "train_img_path", "val_img_path",
-                           "dataset_output_path", "class_names", "num_classes",
+                           "train_label_path", "val_label_path",
+                           "dataset_output_path", "dataset_id", "dataset_classes",
+                           "class_names", "num_classes",
                            "detected_format", "_last_verify_ok"]:
                     st.session_state.pop(k, None)
                 flash("Dataset cleared", "info")

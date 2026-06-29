@@ -35,8 +35,9 @@ def _detect(image):
     if weights:
         try:
             return _detect_real(image, weights)
-        except Exception:
-            pass
+        except Exception as e:
+            from flashstudio.utils import flash
+            flash(f"Model error: {e} — showing demo detections", "warning")
     return _detect_demo(image)
 
 

@@ -19,6 +19,7 @@ CONFIG_SCHEMA = {
     "training": [
         "epochs", "batch_size", "lr", "img_size", "input_size",
         "warmup_epochs", "patience", "grad_accum", "num_workers",
+        "val_interval", "lr_final_ratio", "grad_clip", "multiscale",
     ],
     "optimizer": ["optimizer", "weight_decay", "use_8bit_optimizer"],
     "augmentation": ["aug_mosaic", "aug_mixup", "aug_copypaste"],
@@ -31,18 +32,23 @@ CONFIG_SCHEMA = {
         "amp", "compile_model", "ddp",
         "activation_checkpointing", "activation_offloading",
         "optimizer_in_bwd", "chunked_loss", "chunk_size",
+        "save_best", "resume_training",
     ],
     "output": ["save_dir"],
 }
 
 
 def build_training_config() -> dict:
-    """Build a complete training config dictionary from current session state."""
+    """Build a complete training config dictionary from current session state.
+
+    Uses mirror-aware reads so values survive page navigation.
+    """
+    from flashstudio.utils import get_state
     config = {}
     for section, keys in CONFIG_SCHEMA.items():
         config[section] = {}
         for key in keys:
-            val = st.session_state.get(key)
+            val = get_state(key)
             if val is not None:
                 config[section][key] = val
     return config

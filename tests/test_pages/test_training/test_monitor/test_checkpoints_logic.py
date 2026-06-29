@@ -43,11 +43,9 @@ class TestFileTypeComplete:
         assert result == "Final inference weights"
 
     def test_best_fp16_priority(self):
-        """'best' + 'fp16' should not get caught by just 'best'."""
+        """'best' + 'fp16' should be classified as Best FP16, not generic Best."""
         result = _file_type(CKPT_BEST_FP16)
-        assert "FP16" not in result or "Best" not in result or result in (
-            "Best inference weights", "Final FP16 weights", "FP16 weights"
-        )
+        assert result == "Best FP16 weights"
 
     def test_json_not_results(self):
         assert _file_type("hyperparams.json") == "Report/Config"

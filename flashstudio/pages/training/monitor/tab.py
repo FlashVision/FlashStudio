@@ -39,7 +39,9 @@ def _render_monitor_tab():
         if st.button("Refresh", key="mon_refresh_btn", use_container_width=True):
             st.rerun()
     with wc4:
-        st.toggle("Auto", value=is_training, key="monitor_auto_refresh")
+        if "monitor_auto_refresh" not in st.session_state:
+            st.session_state["monitor_auto_refresh"] = is_training
+        st.toggle("Auto", key="monitor_auto_refresh")
 
     if not os.path.isdir(workspace):
         st.warning("Workspace not found")

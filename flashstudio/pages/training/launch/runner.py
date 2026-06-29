@@ -249,8 +249,8 @@ def _run_flashdet_training():
     qlora_dtype = st.session_state.get("qlora_dtype", QLORA_DTYPE_DEFAULT)
 
     # Chunked loss
-    st.session_state.get("chunked_loss", False)
-    st.session_state.get("chunk_size", CHUNKED_LOSS_CHUNK_SIZE)
+    chunked_loss = st.session_state.get("chunked_loss", False)
+    chunk_size = st.session_state.get("chunk_size", CHUNKED_LOSS_CHUNK_SIZE)
 
     # Pretrained / resume
     pretrain_option = st.session_state.get("pretrain_option", DEFAULT_PRETRAIN_OPTION)
@@ -364,6 +364,8 @@ def _run_flashdet_training():
         cmd.append("--use-8bit-optimizer")
     if compile_model:
         cmd.append("--compile")
+    if chunked_loss:
+        cmd += ["--chunked-loss", "--chunk-size", str(chunk_size)]
 
     if finetune_path:
         cmd += ["--finetune", finetune_path]
@@ -420,6 +422,8 @@ def _run_flashdet_training():
         st.rerun()
         return
 
+    st.session_state["training_active"] = True
+    st.session_state["training_status"] = "Running"
     from flashstudio.utils import flash
     flash(f"Training started (PID {process.pid})", "success")
     st.rerun()

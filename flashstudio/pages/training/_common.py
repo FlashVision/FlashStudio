@@ -8,11 +8,11 @@ from flashstudio.constants import TRAINING_LOG_GLOB
 
 def _get_save_dir():
     """Single source of truth: Model > Advanced > Save Dir. Used across the whole project."""
-    from flashstudio.utils import DEFAULTS
-    val = st.session_state.get("save_dir", "")
+    from flashstudio.utils import get_state
+    val = get_state("save_dir")
     if not val:
+        from flashstudio.utils import DEFAULTS
         val = DEFAULTS["save_dir"]
-        st.session_state["save_dir"] = val
     return val
 
 

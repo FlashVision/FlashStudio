@@ -21,6 +21,11 @@ def _render_start_tab():
     if "run_name" not in st.session_state:
         st.session_state["run_name"] = _generate_run_name()
 
+    prev_name = st.session_state.get("_run_name_at_create", "")
+    current_name = st.session_state.get("run_name", "")
+    if prev_name and current_name != prev_name:
+        st.session_state["run_created"] = False
+
     run_created = st.session_state.get("run_created", False)
     nc = st.session_state.get("num_classes", 0)
 
@@ -40,6 +45,7 @@ def _render_start_tab():
                 else:
                     os.makedirs(full_run_path, exist_ok=True)
                     st.session_state["run_created"] = True
+                    st.session_state["_run_name_at_create"] = run_name
                     st.session_state["save_dir_run"] = full_run_path
                     flash(f"Run `{run_name}` created", "success")
                     st.rerun()
@@ -94,8 +100,8 @@ def _render_start_tab():
             if not st.session_state.get("training_active"):
                 if st.button("Start", use_container_width=True, type="primary",
                              key="btn_start_training", disabled=not all_ok):
-                    st.session_state.update({"training_active": True, "training_status": "Running",
-                                             "training_paused": False, "active_run_path": full_run_path})
+                    st.session_state.update({"training_paused": False,
+                                             "active_run_path": full_run_path})
                     _start_training()
             else:
                 if st.button("Stop", use_container_width=True, key="btn_stop_training"):

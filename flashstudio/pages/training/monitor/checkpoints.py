@@ -64,6 +64,8 @@ def _file_type(filename):
         return "Final FP16 weights"
     if "best" in filename and "inference" in filename:
         return "Best inference weights"
+    if "best" in filename and "fp16" in filename:
+        return "Best FP16 weights"
     if "best" in filename:
         return "Best checkpoint"
     if "last" in filename and "inference" in filename:

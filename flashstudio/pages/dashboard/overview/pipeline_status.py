@@ -17,7 +17,7 @@ def render_pipeline_status():
         ("Data", ds is not None, ds or "Not loaded"),
         ("Model", model is not None, model.replace("FlashDet-", "") if model else "Not set"),
         ("Training", train_status in ("Complete", "Running"), train_status or "Not started"),
-        ("Export", exported is not None, "Ready" if exported else "Pending"),
+        ("Export", bool(exported), "Ready" if exported else "Pending"),
     ]
 
     for label, done, detail in steps:

@@ -32,7 +32,7 @@ def _extract_upload(uploaded_file, split):
                 with zipfile.ZipFile(tmp.name, "r") as zf:
                     zf.extractall(out)
                 os.unlink(tmp.name)
-            elif name.endswith((".tar", ".gz", ".tar.gz", ".tgz")):
+            elif name.endswith((".tar", ".tar.gz", ".tgz")) or (name.endswith(".gz") and ".tar." in name):
                 tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
                 tmp.write(uploaded_file.read()); tmp.flush(); tmp.close()
                 uploaded_file.seek(0)
@@ -190,7 +190,10 @@ def _use_existing(path, ds_info):
     st.session_state["dataset_classes"] = ds_info.get("classes", ds_info.get("cls", INFER_NUM_CLASSES))
     if ds_info.get("id"):
         st.session_state["dataset_id"] = ds_info["id"]
-    t, v = os.path.join(path, "train"), os.path.join(path, "valid")
+    t = os.path.join(path, "train")
+    v = os.path.join(path, "valid")
+    if not os.path.isdir(v):
+        v = os.path.join(path, "val")
     if os.path.isdir(t):
         st.session_state["train_img_path"] = t
     if os.path.isdir(v):

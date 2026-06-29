@@ -327,9 +327,15 @@ def render_info_bar(items: dict):
 
 
 def render_page_header(icon: str, title: str, subtitle: str = ""):
+    icon_html = f'<span style="margin-right:0.4rem;">{icon}</span>' if icon else ""
+    subtitle_html = (
+        f'<div style="font-size:0.82rem;color:#6B7280;margin-top:0.1rem;">{subtitle}</div>'
+        if subtitle else ""
+    )
     st.markdown(
         f'<div style="margin-bottom:0.4rem;">'
-        f'<span style="font-size:1.2rem;font-weight:700;color:#1A1A2E;">{title}</span>'
+        f'<span style="font-size:1.2rem;font-weight:700;color:#1A1A2E;">{icon_html}{title}</span>'
+        f'{subtitle_html}'
         f'</div>',
         unsafe_allow_html=True,
     )

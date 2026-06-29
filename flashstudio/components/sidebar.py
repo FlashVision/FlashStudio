@@ -40,7 +40,7 @@ def render_sidebar():
         if logo_b64:
             st.markdown(
                 f'<div style="display:flex;flex-direction:column;align-items:center;gap:0.3rem;padding:0.6rem 0.2rem 0.5rem;">'
-                f'<img src="data:image/png;base64,{logo_b64}" style="width:40px;height:40px;">'
+                f'<img src="data:image/png;base64,{logo_b64}" style="width:56px;height:56px;">'
                 f'<b style="font-size:1.1rem;color:{COLOR_TEXT_PRIMARY};">FlashStudio</b>'
                 f'</div>',
                 unsafe_allow_html=True,
@@ -71,14 +71,15 @@ def render_sidebar():
         st.divider()
 
         gpu = get_gpu_info()
+        from flashstudio.constants import GPU_NAME_TRUNCATE, DATASET_NAME_TRUNCATE
         train_status = st.session_state.get("training_status", "Idle")
         status_color = COLOR_SUCCESS if train_status == "Complete" else (
             COLOR_WARNING if train_status == "Running" else (
             COLOR_ERROR if train_status == "Failed" else COLOR_TEXT_SECONDARY))
         st.markdown(
             f'<div style="font-size:0.75rem;color:{COLOR_TEXT_BODY};padding:0.1rem 0.5rem;line-height:1.9;">'
-            f'GPU: {gpu["name"][:15] if gpu["available"] else "CPU"}<br>'
-            f'Data: {(st.session_state.get("dataset_name") or "—")[:15]}<br>'
+            f'GPU: {gpu["name"][:GPU_NAME_TRUNCATE] if gpu["available"] else "CPU"}<br>'
+            f'Data: {(st.session_state.get("dataset_name") or "—")[:DATASET_NAME_TRUNCATE]}<br>'
             f'Model: {st.session_state.get("model_arch", "Pico").replace("FlashDet-", "")}<br>'
             f'Status: <span style="color:{status_color};font-weight:600;">{train_status[:12]}</span>'
             f'</div>',
