@@ -1,8 +1,6 @@
 """Tests for recent_runs module."""
 
-from unittest.mock import patch, MagicMock
 
-import pytest
 
 
 def test_render_recent_runs_importable():

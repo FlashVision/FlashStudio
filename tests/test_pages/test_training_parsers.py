@@ -1,7 +1,6 @@
 """Tests for training page parsers and utilities — CSV/log parsing, file type detection."""
 
 import os
-import csv
 import pytest
 
 

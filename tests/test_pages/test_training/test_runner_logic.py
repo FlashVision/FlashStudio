@@ -1,7 +1,6 @@
 """Tests for training runner — _generate_run_name edge cases and trainer_kwargs building."""
 
 import pytest
-from unittest.mock import patch, MagicMock
 from flashstudio.pages.training.launch.runner import _generate_run_name
 
 
@@ -55,7 +54,6 @@ class TestArchitectureMapping:
         mock_session_state["val_img_path"] = "/data/val"
         mock_session_state["active_run_path"] = "/tmp/run"
 
-        from flashstudio.constants import FLASHDET_MODELS
         architecture = "flashdet"
         if "YOLOv8" in family:
             architecture = "yolov8"

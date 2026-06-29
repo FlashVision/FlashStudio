@@ -1,7 +1,6 @@
 """Tests for flashstudio.pages.data.helpers — file discovery utilities."""
 
 import os
-import pytest
 
 
 class TestFindImages:

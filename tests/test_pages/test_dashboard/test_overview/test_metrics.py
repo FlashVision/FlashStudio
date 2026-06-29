@@ -1,8 +1,6 @@
 """Tests for metrics module."""
 
-from unittest.mock import patch, MagicMock
 
-import pytest
 
 
 def test_render_metrics_importable():

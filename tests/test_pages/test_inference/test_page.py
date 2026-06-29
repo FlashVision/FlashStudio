@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.inference.page — inference page entry point."""
 
-import pytest
 
 
 class TestImports:

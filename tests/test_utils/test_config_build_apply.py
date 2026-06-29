@@ -1,6 +1,5 @@
 """Tests for build_training_config and apply_training_config."""
 
-import pytest
 from flashstudio.utils.config import (
     build_training_config, apply_training_config, CONFIG_SCHEMA,
     get_pipeline_steps,

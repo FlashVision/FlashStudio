@@ -1,7 +1,5 @@
 """Tests for flashstudio.pages.model.utils.config — config build/apply helpers."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestModelConfigBuild:

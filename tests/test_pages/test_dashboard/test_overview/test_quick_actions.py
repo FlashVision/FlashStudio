@@ -1,8 +1,6 @@
 """Tests for quick_actions module."""
 
-from unittest.mock import patch, MagicMock
 
-import pytest
 
 
 def test_render_quick_actions_importable():

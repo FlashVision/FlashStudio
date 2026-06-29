@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from flashstudio.constants import (
     COCO_CLASSES, INFER_CONF_THRESHOLD, INFER_NMS_THRESHOLD,
     INFER_IMG_SIZE, INFER_MAX_FRAMES, INFER_FRAME_SKIP,
-    INFER_DEFAULT_RESOLUTION, COLOR_PRIMARY, DEFAULT_SAVE_DIR,
+    INFER_DEFAULT_RESOLUTION, COLOR_PRIMARY,
 )
 from flashstudio.pages.inference._common import (
     _get_class_names, _HAS_PREDICTOR, _SOLUTIONS_AVAILABLE,

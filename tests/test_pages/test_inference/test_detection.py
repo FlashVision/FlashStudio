@@ -1,8 +1,5 @@
 """Tests for flashstudio.pages.inference.run.detection — COCO format, draw helpers."""
 
-import json
-import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestToCocoFormat:

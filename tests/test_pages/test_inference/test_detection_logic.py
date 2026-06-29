@@ -1,9 +1,7 @@
 """Tests for inference detection — _draw_boxes, _detect_demo edge cases, _to_coco_format."""
 
 import json
-import pytest
-from PIL import Image, ImageDraw
-from unittest.mock import patch, MagicMock
+from PIL import Image
 
 
 class TestDrawBoxes:

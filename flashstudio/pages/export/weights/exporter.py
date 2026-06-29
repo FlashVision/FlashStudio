@@ -3,7 +3,7 @@
 import os
 import streamlit as st
 from flashstudio.constants import (
-    EXPORT_OPSET_DEFAULT, INFER_NUM_CLASSES, MODEL_SIZE_DEFAULT,
+    INFER_NUM_CLASSES, MODEL_SIZE_DEFAULT,
 )
 
 

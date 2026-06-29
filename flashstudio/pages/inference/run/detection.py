@@ -5,7 +5,7 @@ import json
 import tempfile
 import streamlit as st
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont
 from flashstudio.constants import (
     COCO_CLASSES, BBOX_COLORS_HEX, BBOX_COLORS_RGB,
     INFER_CONF_THRESHOLD, INFER_NMS_THRESHOLD, INFER_IMG_SIZE,

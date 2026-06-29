@@ -1,7 +1,5 @@
 """Tests for flashstudio.pages.inference._common — solutions registry, device options."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestSolutionsRegistry:

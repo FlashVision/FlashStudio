@@ -1,6 +1,5 @@
 """Tests for flash messages, update_config_mirror, and class name helpers."""
 
-import pytest
 from flashstudio.utils import (
     flash, show_flashes, update_config_mirror,
     get_state, get_class_names_str, get_class_names_list, DEFAULTS,

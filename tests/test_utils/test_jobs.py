@@ -2,8 +2,6 @@
 
 import os
 import time
-import pytest
-from unittest.mock import patch, MagicMock
 from flashstudio.utils.jobs import (
     is_pid_alive, format_job_duration,
 )

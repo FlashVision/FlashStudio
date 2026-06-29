@@ -1,6 +1,5 @@
 """Tests for training_hooks — run_gt_verification edge cases, CSV logger multi-epoch."""
 
-import os
 import csv
 import json
 import pytest

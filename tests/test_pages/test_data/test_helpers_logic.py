@@ -1,8 +1,5 @@
 """Tests for data helpers — _find_root edge cases, _find_images nested, _find_labels nested."""
 
-import os
-import json
-import pytest
 
 
 class TestFindRootEdgeCases:

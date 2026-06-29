@@ -1,7 +1,5 @@
 """Tests for flashstudio.pages.export — config, settings, imports."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestExportPageImports:

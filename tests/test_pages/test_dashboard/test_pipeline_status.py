@@ -1,7 +1,5 @@
 """Tests for flashstudio.pages.dashboard.overview.pipeline_status."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestPipelineStatusLogic:

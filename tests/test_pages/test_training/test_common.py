@@ -1,7 +1,6 @@
 """Tests for flashstudio.pages.training._common — save dir and log finder."""
 
 import os
-import pytest
 
 
 class TestGetSaveDir:

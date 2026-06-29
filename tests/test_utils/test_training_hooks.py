@@ -3,7 +3,6 @@
 import os
 import json
 import pytest
-import tempfile
 
 from flashstudio.utils.training_hooks import _make_palette, run_gt_verification
 

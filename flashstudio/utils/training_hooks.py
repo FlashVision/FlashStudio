@@ -8,7 +8,7 @@ import os
 import json
 import csv
 import numpy as np
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from flashdet.engine.core.callbacks import Callback
 

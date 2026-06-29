@@ -1,6 +1,5 @@
 """Tests for flashstudio.core.constants — verify re-export from canonical location."""
 
-import pytest
 
 
 class TestCoreReExport:

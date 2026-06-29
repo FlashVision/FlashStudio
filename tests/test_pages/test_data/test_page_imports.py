@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.data — import and structure checks."""
 
-import pytest
 
 
 class TestDataPageImports:
@@ -16,8 +15,6 @@ class TestDataPageImports:
         from flashstudio.pages.data._common import (
             _extract_classes_from_coco_json,
             _dataset_already_downloaded,
-            EXTERNAL_DATASETS,
-            QUICK_START,
         )
         assert callable(_extract_classes_from_coco_json)
         assert callable(_dataset_already_downloaded)

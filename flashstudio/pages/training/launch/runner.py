@@ -5,8 +5,7 @@ import json
 import streamlit as st
 
 from flashstudio.constants import (
-    FLASHDET_MODELS, DEFAULT_MODEL_ARCH, DEFAULT_ARCH_FAMILY, DEFAULT_SAVE_DIR,
-    DEFAULT_DATA_DIR, TRAIN_WEIGHT_DECAY, TRAIN_VAL_INTERVAL, DEFAULT_OPTIMIZER,
+    FLASHDET_MODELS, DEFAULT_DATA_DIR, TRAIN_WEIGHT_DECAY, TRAIN_VAL_INTERVAL, DEFAULT_OPTIMIZER,
     LORA_RANK_DEFAULT, LORA_ALPHA_DEFAULT, LORA_DROPOUT_DEFAULT, LORA_TARGETS_DEFAULT,
     QLORA_DTYPE_DEFAULT, CHUNKED_LOSS_CHUNK_SIZE, DEFAULT_FINETUNE_STRATEGY,
     DEFAULT_PRETRAIN_OPTION, VIS_QUEUE_SIZE,
@@ -28,7 +27,7 @@ def _generate_run_name() -> str:
 
 def _start_training():
     """Start training using flashdet.Trainer Python API with pre-flight validation."""
-    from flashdet.data import detect_dataset_format, convert_dataset, verify_dataset
+    from flashdet.data import detect_dataset_format, convert_dataset
 
     train_images = st.session_state.get("train_img_path", "")
     val_images = st.session_state.get("val_img_path", "")
@@ -250,8 +249,8 @@ def _run_flashdet_training():
     qlora_dtype = st.session_state.get("qlora_dtype", QLORA_DTYPE_DEFAULT)
 
     # Chunked loss
-    chunked_loss = st.session_state.get("chunked_loss", False)
-    chunk_size = st.session_state.get("chunk_size", CHUNKED_LOSS_CHUNK_SIZE)
+    st.session_state.get("chunked_loss", False)
+    st.session_state.get("chunk_size", CHUNKED_LOSS_CHUNK_SIZE)
 
     # Pretrained / resume
     pretrain_option = st.session_state.get("pretrain_option", DEFAULT_PRETRAIN_OPTION)

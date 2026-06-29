@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.inference.solution.tab — solution selection & zone drawing."""
 
-import pytest
 
 
 class TestImports:

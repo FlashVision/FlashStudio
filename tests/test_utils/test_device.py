@@ -1,6 +1,5 @@
 """Tests for flashstudio.utils.device."""
 
-import pytest
 from unittest.mock import patch, MagicMock
 from flashstudio.utils.device import (
     is_colab, has_cuda, get_device, get_gpu_info, get_colab_runtime_type,

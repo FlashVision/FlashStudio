@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.training — import and structure checks."""
 
-import pytest
 
 
 class TestTrainingPageImports:

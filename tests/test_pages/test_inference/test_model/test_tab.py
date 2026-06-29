@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.inference.model.tab — model configuration."""
 
-import pytest
 
 
 class TestImports:

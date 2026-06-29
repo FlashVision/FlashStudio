@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check flashstudio/ tests/
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  import-check:
+    name: Import Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -e .
+      - name: Verify page imports
+        run: |
+          python -c "from flashstudio.pages.dashboard import render_dashboard"
+          python -c "from flashstudio.pages.data import render_data_page"
+          python -c "from flashstudio.pages.model import render_model_page"
+          python -c "from flashstudio.pages.training import render_training_page"
+          python -c "from flashstudio.pages.export import render_export_page"
+          python -c "from flashstudio.pages.inference import render_inference_page"
+          echo "All imports OK"

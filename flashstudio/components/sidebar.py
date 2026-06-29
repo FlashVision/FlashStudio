@@ -39,17 +39,17 @@ def render_sidebar():
         logo_b64 = _get_logo_b64()
         if logo_b64:
             st.markdown(
-                f'<div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.2rem 0.4rem;">'
-                f'<img src="data:image/png;base64,{logo_b64}" style="width:32px;height:32px;">'
+                f'<div style="display:flex;flex-direction:column;align-items:center;gap:0.3rem;padding:0.6rem 0.2rem 0.5rem;">'
+                f'<img src="data:image/png;base64,{logo_b64}" style="width:40px;height:40px;">'
                 f'<b style="font-size:1.1rem;color:{COLOR_TEXT_PRIMARY};">FlashStudio</b>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
-                f'<div style="text-align:center;padding:0.4rem 0 0.3rem;">'
+                f'<div style="display:flex;flex-direction:column;align-items:center;gap:0.2rem;padding:0.5rem 0 0.3rem;">'
                 f'<b style="font-size:1.5rem;">FS</b>'
-                f'<b style="font-size:1rem;color:{COLOR_TEXT_PRIMARY};margin-left:0.3rem;">FlashStudio</b>'
+                f'<b style="font-size:1rem;color:{COLOR_TEXT_PRIMARY};">FlashStudio</b>'
                 f'</div>',
                 unsafe_allow_html=True,
             )

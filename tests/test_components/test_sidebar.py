@@ -1,7 +1,6 @@
 """Tests for flashstudio.components.sidebar."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 import sys
 sys.modules.setdefault("streamlit", MagicMock())

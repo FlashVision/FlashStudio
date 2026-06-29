@@ -1,8 +1,6 @@
 """Tests for data._common logic — auto-detect classes, network check, dataset check."""
 
-import os
 import json
-import pytest
 from unittest.mock import patch, MagicMock
 
 

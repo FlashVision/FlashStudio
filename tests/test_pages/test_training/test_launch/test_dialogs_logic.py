@@ -1,7 +1,6 @@
 """Tests for training launch dialogs — _cleanup_run_keep_best edge cases."""
 
 import os
-import shutil
 import pytest
 from flashstudio.constants import (
     CKPT_BEST, CKPT_BEST_INFERENCE, CKPT_BEST_FP16,

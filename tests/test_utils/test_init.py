@@ -1,6 +1,5 @@
 """Tests for flashstudio.utils — top-level helpers."""
 
-import pytest
 from flashstudio.utils import (
     get_default, get_state, DEFAULTS,
     get_class_names_str, get_class_names_list,

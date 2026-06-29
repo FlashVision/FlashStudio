@@ -51,7 +51,8 @@ def _ensure_config_in_session(project_id: str):
     critical config values like epochs, batch_size, lr etc. always remain
     available in session state for other pages to read.
     """
-    import os, json
+    import os
+    import json
     from flashstudio.components.project_manager import get_project_dir
 
     config_keys = [

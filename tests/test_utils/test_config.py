@@ -1,11 +1,10 @@
 """Tests for flashstudio.utils.config."""
 
 import os
-import pytest
 import yaml
 from flashstudio.utils.config import (
     CONFIG_SCHEMA, save_config_yaml, load_config_yaml,
-    config_to_yaml_str, get_pipeline_steps,
+    config_to_yaml_str,
 )
 
 

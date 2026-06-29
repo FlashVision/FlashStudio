@@ -62,7 +62,8 @@ def _get_native_datasets():
 
 
 def _check_network() -> bool:
-    import urllib.request, urllib.error
+    import urllib.request
+    import urllib.error
     try:
         urllib.request.urlopen(NETWORK_CHECK_URL, timeout=NETWORK_CHECK_TIMEOUT)
         return True

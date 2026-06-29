@@ -1,7 +1,6 @@
 """Tests for flashstudio.utils.filesystem."""
 
 import os
-import pytest
 from flashstudio.utils.filesystem import (
     dir_size_bytes, dir_size_str, ensure_dir,
     safe_rmtree, list_subdirs, count_files,

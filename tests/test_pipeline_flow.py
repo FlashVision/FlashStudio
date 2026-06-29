@@ -10,8 +10,6 @@ Verifies that:
 
 import os
 import json
-import tempfile
-import shutil
 
 import pytest
 

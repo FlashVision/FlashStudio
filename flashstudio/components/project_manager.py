@@ -225,7 +225,9 @@ def duplicate_project(project_id: str, new_name: str) -> dict:
 
 def get_project_stats(project_id: str) -> dict:
     """Get statistics for a project."""
-    import re, csv, glob
+    import re
+    import csv
+    import glob
     proj_dir = get_project_dir(project_id)
     stats = {"runs": 0, "best_map": None, "total_size": "0 KB", "has_export": False}
 
@@ -299,7 +301,7 @@ def render_project_selector():
         return False  # No projects exist — show creation UI
 
     # Quick selector
-    project_names = {p["id"]: p["name"] for p in projects}
+    {p["id"]: p["name"] for p in projects}
     active_idx = 0
     for i, p in enumerate(projects):
         if p["id"] == active_id:
@@ -350,7 +352,7 @@ def render_project_manager_page():
             st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
             if st.button("Create", type="primary", key="create_project_btn",
                          use_container_width=True, disabled=not new_name):
-                proj = create_project(new_name, new_desc)
+                create_project(new_name, new_desc)
                 st.success(f"Project **{new_name}** created!")
                 _clear_session_for_new_project()
                 st.rerun()
@@ -365,10 +367,9 @@ def render_project_manager_page():
     st.markdown('<div style="max-height:calc(100vh - 22rem);overflow-y:auto;scrollbar-width:thin;">', unsafe_allow_html=True)
     for p in sorted(projects, key=lambda x: x.get("last_modified", ""), reverse=True):
         is_active = p["id"] == active_id
-        proj_dir = get_project_dir(p["id"])
+        get_project_dir(p["id"])
         stats = get_project_stats(p["id"])
 
-        border_style = "border-left: 3px solid #7C3AED;" if is_active else ""
         with st.container(border=True):
             col_info, col_stats, col_actions = st.columns([3, 2, 2])
 

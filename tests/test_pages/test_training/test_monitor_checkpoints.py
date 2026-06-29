@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.training.monitor.checkpoints — file type classification."""
 
-import pytest
 
 
 class TestFileType:

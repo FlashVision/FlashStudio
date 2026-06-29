@@ -1,7 +1,6 @@
 """Tests for flashstudio.components.zone_drawer."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 import sys
 sys.modules.setdefault("streamlit", MagicMock())

@@ -3,7 +3,7 @@
 import os
 import glob as glob_module
 import streamlit as st
-from flashstudio.constants import TRAINING_LOG_CSV, TRAINING_LOG_GLOB
+from flashstudio.constants import TRAINING_LOG_GLOB
 
 
 def _get_save_dir():

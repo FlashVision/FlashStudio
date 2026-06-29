@@ -1,7 +1,6 @@
 """Tests for flashstudio.cli — CLI argument parsing."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestCliMain:

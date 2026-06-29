@@ -1,7 +1,5 @@
 """Tests for flashstudio.pages.inference.data.tab — data input handling."""
 
-import pytest
-from unittest.mock import MagicMock
 
 
 class TestImports:

@@ -1,17 +1,12 @@
 """Tests for flashstudio.pages.dashboard._common — shared imports."""
 
-import pytest
 
 
 class TestDashboardCommonImports:
     def test_all_constants_importable(self):
         from flashstudio.pages.dashboard._common import (
-            IMG_EXTENSIONS, DEFAULT_SAVE_DIR, MAX_DISPLAY_RUNS,
-            CKPT_BEST, CKPT_BEST_INFERENCE, CKPT_FINAL_INFERENCE,
-            CKPT_FINAL_FP16, TRAINING_LOG_CSV,
-            COLOR_SUCCESS, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
-            COLOR_TEXT_MUTED, COLOR_BORDER, COLOR_BG_HIGHLIGHT,
-            GPU_NAME_TRUNCATE, DATASET_NAME_TRUNCATE,
+            IMG_EXTENSIONS, MAX_DISPLAY_RUNS,
+            COLOR_SUCCESS, GPU_NAME_TRUNCATE, DATASET_NAME_TRUNCATE,
         )
         assert isinstance(IMG_EXTENSIONS, tuple)
         assert isinstance(MAX_DISPLAY_RUNS, int)

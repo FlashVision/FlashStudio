@@ -1,11 +1,9 @@
 """Tests for run_meta — edge cases for status detection, metadata extraction."""
 
-import os
 import csv
 import pytest
 from flashstudio.constants import (
-    CKPT_BEST, CKPT_BEST_INFERENCE, CKPT_LAST, CKPT_LAST_INFERENCE,
-    CKPT_FINAL_INFERENCE, CKPT_FINAL_FP16, TRAINING_LOG_CSV,
+    CKPT_BEST, CKPT_LAST, CKPT_FINAL_INFERENCE, CKPT_FINAL_FP16, TRAINING_LOG_CSV,
 )
 from flashstudio.pages.training.monitor.run_meta import _get_run_meta
 

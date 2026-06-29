@@ -24,9 +24,7 @@ parsers/monitors and verify they discover the correct files.
 import csv
 import json
 import os
-import tempfile
 import textwrap
-from unittest.mock import MagicMock, patch
 
 import pytest
 

@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.training.launch.runner — run name generation."""
 
-import pytest
 from datetime import datetime
 
 

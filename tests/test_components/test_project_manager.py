@@ -1,6 +1,5 @@
 """Tests for flashstudio.components.project_manager — pure-logic helpers."""
 
-import pytest
 from flashstudio.components.project_manager import _slugify, _dir_size_str
 
 

@@ -9,7 +9,6 @@ from flashstudio.pages.training.launch.preflight import _run_preflight_checks
 from flashstudio.pages.training.launch.runner import _start_training, _generate_run_name
 from flashstudio.pages.training.launch.controls import _stop_training, _pause_training, _resume_active_training
 from flashstudio.pages.training.launch.dialogs import _render_clean_workspace_dialog, _render_resume_dialog
-from flashstudio.constants import DEFAULT_MODEL_ARCH
 
 
 def _render_start_tab():
@@ -86,7 +85,7 @@ def _render_start_tab():
             if not ok:
                 all_ok = False
         st.markdown(
-            f'<div class="ds-card-stats">' + ' '.join(f'<span>{c}</span>' for c in check_html) + '</div>',
+            '<div class="ds-card-stats">' + ' '.join(f'<span>{c}</span>' for c in check_html) + '</div>',
             unsafe_allow_html=True,
         )
 

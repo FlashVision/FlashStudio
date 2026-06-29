@@ -59,7 +59,7 @@ def render_metrics(gpu, stats):
             st.markdown(
                 f'<div style="text-align:center;padding:0.4rem 0;">'
                 f'<div style="font-size:0.78rem;color:{COLOR_TEXT_SECONDARY};font-weight:500;">Best mAP</div>'
-                f'<div style="font-size:1.4rem;font-weight:800;color:{COLOR_SUCCESS if best_map != "\u2014" else COLOR_TEXT_PRIMARY};">{best_map}</div>'
+                f'<div style="font-size:1.4rem;font-weight:800;color:{COLOR_SUCCESS if best_map != chr(8212) else COLOR_TEXT_PRIMARY};">{best_map}</div>'
                 f'<div style="font-size:0.75rem;color:{COLOR_TEXT_MUTED};">{runs_count} runs</div>'
                 f'</div>',
                 unsafe_allow_html=True,

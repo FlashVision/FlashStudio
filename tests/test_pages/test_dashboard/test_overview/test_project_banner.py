@@ -1,8 +1,7 @@
 """Tests for project_banner module."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 
 def test_render_project_banner_importable():

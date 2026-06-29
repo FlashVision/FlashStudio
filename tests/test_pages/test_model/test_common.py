@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.model._common — re-exports."""
 
-import pytest
 
 
 class TestModelCommonImports:

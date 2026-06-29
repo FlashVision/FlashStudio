@@ -1,6 +1,5 @@
 """FlashStudio — Dashboard."""
 
-import streamlit as st
 from flashstudio.components.styles import render_page_header
 from flashstudio.pages.dashboard.overview.tab import render_overview
 

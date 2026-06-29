@@ -1,8 +1,6 @@
 """Tests for dashboard page module."""
 
-from unittest.mock import patch, MagicMock
 
-import pytest
 
 
 def test_render_dashboard_importable():

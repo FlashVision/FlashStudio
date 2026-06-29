@@ -14,7 +14,6 @@ def _check_training_process():
     if not pid or not st.session_state.get("training_active"):
         return
 
-    import signal
     try:
         os.kill(pid, 0)
         return
@@ -117,7 +116,7 @@ def render_training_page():
         else:
             st.success(f"Running (PID {pid})")
     elif status == "Failed":
-        st.error(f"Training failed")
+        st.error("Training failed")
     elif status == "Complete":
         st.success("Training complete")
 

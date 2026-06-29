@@ -17,7 +17,9 @@ except ImportError:
 
 
 def _extract_upload(uploaded_file, split):
-    import zipfile, tarfile, tempfile
+    import zipfile
+    import tarfile
+    import tempfile
     name = uploaded_file.name
     out = os.path.join(DEFAULT_DATA_DIR, "uploaded", split)
     os.makedirs(out, exist_ok=True)
@@ -244,7 +246,10 @@ def _run_flashdet_download(dataset_id):
 
 
 def _run_external_download(ds):
-    import urllib.request, urllib.error, zipfile, tempfile
+    import urllib.request
+    import urllib.error
+    import zipfile
+    import tempfile
     url, name = ds.get("url", ""), ds.get("name", "dataset")
     if not url or "VisDrone" in url:
         st.info(f"Manual: [{url}]({url})")

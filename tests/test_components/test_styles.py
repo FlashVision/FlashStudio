@@ -1,7 +1,6 @@
 """Tests for flashstudio.components.styles — style helpers."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestRenderInfoBar:

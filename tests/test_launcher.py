@@ -1,7 +1,6 @@
 """Tests for flashstudio.launcher — launch helpers and config."""
 
 import os
-import pytest
 from unittest.mock import patch, MagicMock
 
 from flashstudio.launcher import _get_app_path, _STREAMLIT_CONFIG, _ensure_streamlit_config

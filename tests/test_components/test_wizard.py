@@ -1,7 +1,6 @@
 """Tests for flashstudio.components.wizard — step indicator and navigation logic."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 SAMPLE_STEPS = [

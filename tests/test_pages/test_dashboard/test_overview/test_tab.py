@@ -1,8 +1,6 @@
 """Tests for overview tab module."""
 
-from unittest.mock import patch, MagicMock
 
-import pytest
 
 
 def test_render_overview_importable():

@@ -1,6 +1,5 @@
 """Tests for flashstudio.pages.training.launch.controls — training process control."""
 
-import pytest
 
 
 class TestControlImports:

@@ -7,7 +7,7 @@ import streamlit as st
 from flashstudio.utils.filesystem import dir_size_str
 from flashstudio.utils.config import build_training_config, apply_training_config
 from flashstudio.constants import (
-    DEFAULT_SAVE_DIR, CKPT_BEST, CKPT_BEST_INFERENCE, CKPT_BEST_FP16,
+    CKPT_BEST, CKPT_BEST_INFERENCE, CKPT_BEST_FP16,
     CKPT_FINAL_INFERENCE, CKPT_FINAL_FP16, CKPT_LAST, CKPT_LAST_INFERENCE,
     TRAINING_LOG_CSV,
 )
