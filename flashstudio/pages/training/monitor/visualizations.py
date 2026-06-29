@@ -23,10 +23,12 @@ def _render_visualizations(run_dir):
 
     st.caption(f"Showing latest {len(queue)} of {len(all_images)} total  |  Queue drops oldest when new arrives")
 
-    for img_path in queue:
+    cols = st.columns(VIS_QUEUE_SIZE)
+    for i, img_path in enumerate(queue):
         fname = os.path.basename(img_path)
         label = fname.replace(".jpg", "").replace(".png", "").replace("_", " ").title()
-        st.image(img_path, caption=label, use_container_width=True)
+        with cols[i]:
+            st.image(img_path, caption=label, use_container_width=True)
 
 
 def _render_image_grid(img_dir, description):
