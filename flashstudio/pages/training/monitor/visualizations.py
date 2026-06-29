@@ -31,8 +31,8 @@ def _render_visualizations(run_dir):
             st.image(img_path, caption=label, use_container_width=True)
 
 
-def _render_image_grid(img_dir, description):
-    """Render images from a directory in a grid."""
+def _render_image_grid(img_dir, description, max_images=3):
+    """Render images from a directory in a grid (max 3 by default)."""
     if not os.path.isdir(img_dir):
         st.info(f"Directory not found: {img_dir}")
         return
@@ -42,13 +42,11 @@ def _render_image_grid(img_dir, description):
         st.info("No images found.")
         return
 
-    st.caption(f"{description} — {len(images)} images")
+    shown = images[:max_images]
+    st.caption(f"{description} — {len(shown)} images" + (f" (of {len(images)} total)" if len(images) > max_images else ""))
 
-    for i in range(0, len(images), 4):
-        cols = st.columns(4)
-        for j, col in enumerate(cols):
-            idx = i + j
-            if idx < len(images):
-                img_path = os.path.join(img_dir, images[idx])
-                with col:
-                    st.image(img_path, caption=images[idx][:30], use_container_width=True)
+    cols = st.columns(len(shown))
+    for i, col in enumerate(cols):
+        img_path = os.path.join(img_dir, shown[i])
+        with col:
+            st.image(img_path, caption=shown[i][:30], use_container_width=True)
