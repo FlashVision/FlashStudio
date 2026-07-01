@@ -1,11 +1,12 @@
 """Record short GIF demos for each FlashStudio page."""
 
 import asyncio
+import sys
 import os
 import glob
-import numpy as np
 import imageio.v3 as iio
 from PIL import Image
+import numpy as np
 from playwright.async_api import async_playwright
 
 APP_URL = "http://127.0.0.1:8510"
