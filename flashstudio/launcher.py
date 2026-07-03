@@ -3,6 +3,8 @@
 import subprocess
 import sys
 import os
+import re
+import time as _time
 from pathlib import Path
 
 from flashstudio.utils.device import is_colab
@@ -48,8 +50,10 @@ def launch(port: int = 8501, share: bool = True, ngrok_token: str | None = None)
 
     Args:
         port: Port to run the Streamlit server on.
-        share: If True and running in Colab, creates a public ngrok tunnel.
-        ngrok_token: Optional ngrok auth token. If not provided, uses NGROK_TOKEN env var.
+        share: If True and running in Colab, creates a public tunnel
+               (works on mobile too).
+        ngrok_token: Optional ngrok auth token. If not provided, uses
+                     NGROK_TOKEN env var.
     """
     _ensure_streamlit_config()
     app_path = _get_app_path()
@@ -61,11 +65,90 @@ def launch(port: int = 8501, share: bool = True, ngrok_token: str | None = None)
         return None
 
 
+# ---------------------------------------------------------------------------
+# Tunnel helpers
+# ---------------------------------------------------------------------------
+
+def _start_cloudflared_tunnel(port: int) -> str | None:
+    """Start a free Cloudflare tunnel (no sign-up required).
+
+    Returns the public https URL or None on failure.
+    """
+    binary = "/usr/local/bin/cloudflared"
+    if not os.path.isfile(binary):
+        try:
+            subprocess.check_call(
+                ["wget", "-q",
+                 "https://github.com/cloudflare/cloudflared/releases/latest"
+                 "/download/cloudflared-linux-amd64",
+                 "-O", binary],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            os.chmod(binary, 0o755)
+        except Exception:
+            return None
+
+    tunnel_proc = subprocess.Popen(
+        [binary, "tunnel", "--url", f"http://localhost:{port}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    url_re = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
+    deadline = _time.monotonic() + 20
+    while _time.monotonic() < deadline:
+        line = tunnel_proc.stderr.readline().decode("utf-8", errors="replace")
+        if not line:
+            if tunnel_proc.poll() is not None:
+                return None
+            _time.sleep(0.2)
+            continue
+        match = url_re.search(line)
+        if match:
+            return match.group(0)
+
+    return None
+
+
+def _start_ngrok_tunnel(port: int, ngrok_token: str) -> str | None:
+    """Start an ngrok tunnel. Requires an auth token."""
+    try:
+        from pyngrok import ngrok, conf
+    except ImportError:
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "-q", "pyngrok"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            from pyngrok import ngrok, conf
+        except Exception:
+            return None
+    try:
+        conf.get_default().auth_token = ngrok_token
+        return str(ngrok.connect(port, "http"))
+    except Exception:
+        return None
+
+
+def _get_colab_proxy_url(port: int) -> str | None:
+    """Get Colab's built-in proxy URL (only works in the same browser session)."""
+    try:
+        from google.colab.output import eval_js
+        result = eval_js(f"google.colab.kernel.proxyPort({port})")
+        if result and str(result).startswith("http"):
+            return str(result)
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Colab launcher
+# ---------------------------------------------------------------------------
+
 def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None):
-    """Launch in Google Colab with automatic tunnel detection."""
-    import time as _time
+    """Launch in Google Colab with a public URL that works on any device."""
     import urllib.request
-    import urllib.error
 
     print("  Starting FlashStudio...", end="", flush=True)
 
@@ -79,17 +162,18 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
         stderr=subprocess.PIPE,
     )
 
-    # Wait until Streamlit is actually responding (up to 30s)
     ready = False
-    for i in range(30):
+    for _ in range(30):
         _time.sleep(1)
         if proc.poll() is not None:
             _, stderr = proc.communicate()
-            err_msg = stderr.decode("utf-8", errors="replace")[-500:] if stderr else "Unknown error"
+            err_msg = (stderr.decode("utf-8", errors="replace")[-500:]
+                       if stderr else "Unknown error")
             print(f"\n\n  FlashStudio failed to start:\n  {err_msg}")
             return proc
         try:
-            urllib.request.urlopen(f"http://localhost:{port}/_stcore/health", timeout=2)
+            urllib.request.urlopen(
+                f"http://localhost:{port}/_stcore/health", timeout=2)
             ready = True
             break
         except Exception:
@@ -100,43 +184,47 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
     else:
         print(" (still loading, URL may take a moment)")
 
+    # --- Obtain a public URL ---
+    # Priority: cloudflared (free, works everywhere including mobile)
+    #         > ngrok (needs token) > Colab proxy (desktop-only)
     public_url = None
+    tunnel_type = None
 
-    # Method 1: Colab's built-in proxy (simplest, no install needed)
-    try:
-        from google.colab.output import eval_js
-        result = eval_js(f"google.colab.kernel.proxyPort({port})")
-        if result and str(result).startswith("http"):
-            public_url = str(result)
-    except Exception:
-        pass
+    if share:
+        # 1) Free Cloudflare tunnel — works on mobile, no sign-up
+        print("  Setting up public URL (works on mobile)...", end="", flush=True)
+        public_url = _start_cloudflared_tunnel(port)
+        if public_url:
+            tunnel_type = "cloudflared"
+            print(" Done!")
 
-    # Method 2: ngrok (only if token is provided)
+        # 2) ngrok — if a token is available
+        if not public_url:
+            token = ngrok_token or os.environ.get("NGROK_TOKEN", "")
+            if token:
+                public_url = _start_ngrok_tunnel(port, token)
+                if public_url:
+                    tunnel_type = "ngrok"
+                    print(" Done!")
+
+        if not public_url:
+            print(" Skipped (using Colab proxy)")
+
+    # 3) Colab's built-in proxy (fallback — desktop browser only)
+    colab_proxy_url = _get_colab_proxy_url(port)
     if not public_url:
-        token = ngrok_token or os.environ.get("NGROK_TOKEN", "")
-        if token:
-            try:
-                from pyngrok import ngrok, conf
-                conf.get_default().auth_token = token
-                public_url = str(ngrok.connect(port, "http"))
-            except ImportError:
-                try:
-                    subprocess.check_call(
-                        [sys.executable, "-m", "pip", "install", "-q", "pyngrok"],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    )
-                    from pyngrok import ngrok, conf
-                    conf.get_default().auth_token = token
-                    public_url = str(ngrok.connect(port, "http"))
-                except Exception:
-                    pass
-            except Exception:
-                pass
+        public_url = colab_proxy_url
 
+    # --- Display results ---
     print(f"\n{'=' * 60}")
     print("  FlashStudio is running!")
     if public_url:
         print(f"  Open: {public_url}")
+        if tunnel_type:
+            print(f"  (works on mobile & any device)")
+        else:
+            print(f"  ⚠ This URL only works in this browser.")
+            print(f"    On mobile? Re-run with: launch(share=True)")
     else:
         print(f"  Port: {port}")
         print("")
@@ -149,17 +237,26 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
     if public_url:
         try:
             from IPython.display import display, HTML
+            mobile_badge = ""
+            if tunnel_type:
+                mobile_badge = (
+                    '<span style="display:inline-block;font-size:11px;'
+                    'padding:2px 8px;background:#10B981;color:white;'
+                    'border-radius:4px;margin-left:8px;vertical-align:middle;">'
+                    'Mobile Ready</span>'
+                )
             display(HTML(
+                f'<div style="margin:8px 0;">'
                 f'<a href="{public_url}" target="_blank" '
                 f'style="display:inline-block;font-size:16px;padding:10px 24px;'
                 f'background:#7C3AED;color:white;border-radius:8px;'
-                f'text-decoration:none;font-weight:600;margin:8px 0;">'
-                f'Open FlashStudio</a>'
+                f'text-decoration:none;font-weight:600;">'
+                f'Open FlashStudio</a>{mobile_badge}</div>'
             ))
         except Exception:
             pass
 
-    # Embed Streamlit directly in the Colab cell (works on mobile too)
+    # Embed Streamlit directly in the Colab cell output
     try:
         from google.colab import output
         output.serve_kernel_port_as_iframe(port, height=800)
@@ -168,13 +265,14 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
             try:
                 from IPython.display import display, HTML
                 display(HTML(
-                    f'<div style="padding:12px;background:#FEF3C7;border-radius:8px;'
-                    f'margin:8px 0;font-size:14px;">'
+                    f'<div style="padding:12px;background:#FEF3C7;'
+                    f'border-radius:8px;margin:8px 0;font-size:14px;">'
                     f'Run in a <b>new cell</b>:<br>'
-                    f'<code style="background:#F3F4F6;padding:4px 8px;border-radius:4px;">'
+                    f'<code style="background:#F3F4F6;padding:4px 8px;'
+                    f'border-radius:4px;">'
                     f'from google.colab import output; '
-                    f'output.serve_kernel_port_as_iframe({port}, height=800)</code>'
-                    f'</div>'
+                    f'output.serve_kernel_port_as_iframe({port}, height=800)'
+                    f'</code></div>'
                 ))
             except Exception:
                 pass
