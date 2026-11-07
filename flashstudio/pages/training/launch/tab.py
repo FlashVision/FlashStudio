@@ -153,8 +153,13 @@ def _render_start_tab():
         st.caption("Each run gets its own folder for checkpoints, logs, and plots.")
         name_col, button_col = st.columns([3, 1])
         with name_col:
-            st.text_input("Run name", key="run_name", label_visibility="collapsed",
-                          placeholder="e.g. traffic-night-v2")
+            st.text_input(
+                "Run name",
+                value=str(st.session_state.get("run_name", "")),
+                key="run_name",
+                label_visibility="collapsed",
+                placeholder="e.g. traffic-night-v2",
+            )
         run_name = st.session_state.get("run_name", "untitled_run")
         safe_run_name = _sanitize_run_name(run_name)
         full_run_path = os.path.join(runs_root, safe_run_name)

@@ -22,20 +22,22 @@
 
 ## Features
 
-- 🏋️ **Training Dashboard** — FlashDet or Ultralytics backends with live loss curves and run comparison
-- 🧠 **Framework-specific Model Config** — FlashDet (Pico → X, 42 Pico-Zoo backbones), Ultralytics YOLOv8/v9/v10/v11, YOLOX inference/export
-- ⬇️ **Weight Hub** — download FlashDet registry and Ultralytics checkpoints for training and inference
-- 🔍 **Inference Pipeline** — FlashDet, Ultralytics, ONNX Runtime, TorchScript, and TensorRT engines
-- 📹 **Live Inference** — RTSP/webcam streaming, multi-camera grid, live FPS, and MP4 capture
-- ✏️ **Annotation Repair** — scan/fix COCO and YOLO boxes, class IDs, duplicates, and missing files
+- 🗂️ **Project Workspaces** — every project keeps its own datasets, runs, checkpoints, and UI state; switch projects without losing context
+- 🧭 **Guided Workflow** — Dashboard → Data → Model → Training → Export → Inference, with pipeline readiness and "what to do next" hints
+- 📊 **Dataset Quality** — class balance, empty/corrupt/duplicate images, box-size distribution, and annotation counts
 - 🖱️ **Annotation Editor** — edit boxes and classes per image with live preview
-- 📊 **Dataset Quality** — class balance, empty/corrupt/duplicate images, box-size buckets
-- 🎯 **Zone Editor** — polygon, rectangle, and line zones with multi-zone support
+- ✏️ **Annotation Repair** — scan/fix COCO and YOLO boxes, class IDs, duplicates, and missing files
+- 🧠 **Framework-first Model Config** — FlashDet (Pico → X, 42 Pico-Zoo backbones), Ultralytics YOLOv8/v9/v10/v11, YOLOX inference/export
+- 🏋️ **Training Dashboard** — preflight checks, launch/pause/resume/stop, live loss curves, epoch visualizations, GT verification, logs, and checkpoints
+- 📈 **Run Comparison** — compare metrics and curves across training runs
+- ⚡ **Optimize** — layer/kernel fusion, ONNX export with parity, INT8 quantization, FPS/latency benchmark
+- 📤 **Export** — ONNX and TorchScript export for FlashDet and Ultralytics weights, TensorRT when available
+- 🔍 **Inference Pipeline** — images, video, and RTSP/webcam with FlashDet, Ultralytics, ONNX Runtime, TorchScript, and TensorRT engines
+- 🎯 **Zones & Solutions** — polygon, rectangle, and line zones with 16 built-in solutions
+- 📹 **Live Inference** — live FPS and detections, MP4 capture, and multi-camera grid
 - 🧪 **Active Learning** — export low-confidence detections for review and retraining
-- ⚡ **Optimize** — layer/kernel fusion, ONNX parity checks, INT8 quantization, FPS benchmark
-- 📤 **Export** — ONNX and TorchScript export for FlashDet and Ultralytics weights
-- 📦 **Data** — Native `flashdet download` datasets + custom upload (COCO/VOC/YOLO formats)
-- 📊 **Dashboard** — Project overview, workspace/environment details, and recent runs
+- 📦 **Data Ingest** — native `flashdet download` datasets, ZIP/TAR upload, and COCO/VOC/YOLO conversion
+- 🔌 **Dependency Hints** — in-app guidance for optional runtimes, frameworks, and one-click installs
 - 🚀 **Colab Support** — Works out-of-the-box, no token or signup needed
 
 ---
@@ -43,42 +45,42 @@
 ## UI Tour
 
 ### Dashboard
-Project overview with key metrics (GPU, Dataset, Model, mAP), pipeline status, quick actions, and recent training runs.
+Project overview with compute, dataset, model, and best-mAP metrics, a four-stage pipeline status (Data → Model → Training → Export), guided next steps, and recent runs. Expand **Workspace** for environment details.
 
 <p align="center">
   <img src="demos/01_dashboard.gif" width="800" alt="Dashboard"/>
 </p>
 
 ### Data Management
-Upload datasets (ZIP/TAR), download from `flashdet` registry, preview images with navigation, and verify annotations.
+Upload ZIP/TAR datasets or download from the `flashdet` registry, preview images with annotation overlays, verify splits, repair annotations, edit boxes, and inspect a quality report with class balance and duplicate/empty-image checks.
 
 <p align="center">
   <img src="demos/02_data.gif" width="800" alt="Data Management"/>
 </p>
 
 ### Model Configuration
-Choose from 6 FlashDet sizes + YOLO variants. Configure hyperparameters, augmentations, and advanced settings (memory optimization, distributed training).
+Pick a framework first — FlashDet, Ultralytics, or YOLOX — then choose an architecture and tune hyperparameters, augmentations, and advanced options. The config summary bar updates live and can be saved/loaded as YAML.
 
 <p align="center">
   <img src="demos/03_model.gif" width="800" alt="Model Configuration"/>
 </p>
 
 ### Training
-Create experiments, launch training with preflight checks, and monitor runs with real-time curves, visualizations, ground truth, logs, and file browser.
+Create a run, pass preflight checks, then launch and control training. Monitor live curves, epoch visualizations, ground truth, logs, and checkpoints — or compare metrics across runs.
 
 <p align="center">
   <img src="demos/04_training.gif" width="800" alt="Training"/>
 </p>
 
-### Export
-Export trained models to ONNX format with configurable opset, image size, and dynamic batching. Auto-detects saved weights from training.
+### Export & Optimize
+Framework-first export with dependency hints: select a checkpoint, choose ONNX/TorchScript (plus TensorRT for Ultralytics), then fuse layers, quantize to INT8, and benchmark FPS and latency.
 
 <p align="center">
   <img src="demos/05_export.gif" width="800" alt="Export"/>
 </p>
 
 ### Inference
-Full inference pipeline with 17 built-in solutions (object counting, speed estimation, heatmaps, security alarms, etc.). Interactive zone drawing with Polygon, Rectangle, and Line tools.
+Framework-first inference with Model → Data → Solution → Run → Live tabs. Upload images, video, or an RTSP stream, draw polygon/rectangle/line zones, run detection, and review per-image detections and timings.
 
 <p align="center">
   <img src="demos/06_inference.gif" width="800" alt="Inference"/>
@@ -200,65 +202,61 @@ launch()
 FlashStudio/
 ├── flashstudio/
 │   ├── __init__.py                  # Package init + launch() export
-│   ├── app.py                       # Main Streamlit app (wizard flow)
+│   ├── app.py                       # Main Streamlit app (shell, routing, autosave)
 │   ├── launcher.py                  # Colab/local launcher (auto-tunnel)
 │   ├── cli.py                       # CLI entrypoint
 │   ├── constants.py                 # Centralized constants (paths, defaults, models)
+│   ├── core/
+│   │   └── constants.py             # Re-export of canonical constants
 │   │
 │   ├── pages/                       # Each page is a sub-package
 │   │   ├── dashboard/
-│   │   │   ├── page.py              # Main dashboard render
-│   │   │   ├── pipeline_status.py   # Pipeline status cards
-│   │   │   └── recent_runs.py       # Recent training runs table
+│   │   │   ├── page.py              # Dashboard render
+│   │   │   └── overview/            # Project banner, metrics, pipeline status,
+│   │   │                            # quick actions, recent runs
 │   │   ├── data/
-│   │   │   ├── page.py              # Main data page render
-│   │   │   ├── upload.py            # Upload tab (ZIP/TAR + class config)
-│   │   │   ├── download.py          # Download tab (quick start + registries)
-│   │   │   ├── preview.py           # Preview tab (image grid + annotations)
-│   │   │   ├── verify.py            # Verify tab (dataset validation)
-│   │   │   └── helpers.py           # Shared helpers (extract, detect, convert)
+│   │   │   ├── page.py              # Data page shell + tab routing
+│   │   │   ├── helpers.py           # Extract, convert, download runners
+│   │   │   ├── upload/tab.py        # ZIP/TAR upload + class configuration
+│   │   │   ├── download/tab.py      # Quick Start, native, and external datasets
+│   │   │   ├── preview/tab.py       # Image grid with COCO/YOLO overlays
+│   │   │   ├── verify/tab.py        # Dataset validation and split stats
+│   │   │   ├── edit/tab.py          # Manual annotation editor
+│   │   │   ├── fix/
+│   │   │   │   ├── tab.py           # Repair tab
+│   │   │   │   └── annotations.py   # COCO/YOLO repair engine
+│   │   │   └── quality/tab.py       # Quality report and class balance
 │   │   ├── model/
-│   │   │   ├── page.py              # Main model page render
-│   │   │   ├── architecture.py      # Architecture tab (FlashDet/YOLO selection)
-│   │   │   ├── hyperparams.py       # Hyperparameters tab
-│   │   │   ├── augmentation.py      # Augmentation tab
-│   │   │   ├── advanced.py          # Advanced tab (memory, distributed)
-│   │   │   └── summary.py           # Config summary bar + YAML save/load
+│   │   │   ├── page.py              # Model page shell + summary bar
+│   │   │   ├── architecture/tab.py  # Framework + architecture selection
+│   │   │   ├── hyperparams/tab.py   # Training schedule and optimizer
+│   │   │   ├── augment/tab.py       # Augmentation settings
+│   │   │   ├── advanced/tab.py      # Memory/distributed/advanced options
+│   │   │   └── utils/config.py      # Config build/apply helpers
 │   │   ├── training/
-│   │   │   ├── page.py              # Main training page render
-│   │   │   ├── _common.py           # Shared utilities (_get_save_dir)
-│   │   │   ├── launch/              # Launch sub-package
-│   │   │   │   ├── tab.py           # Launch tab entry point
-│   │   │   │   ├── preflight.py     # Pre-flight checks
-│   │   │   │   ├── runner.py        # FlashDet Trainer subprocess
-│   │   │   │   ├── controls.py      # Start/stop/pause/resume buttons
-│   │   │   │   └── dialogs.py       # Clean/resume/config dialogs
-│   │   │   └── monitor/             # Monitor sub-package
-│   │   │       ├── tab.py           # Monitor tab entry point
-│   │   │       ├── run_meta.py      # Run metadata extraction
-│   │   │       ├── parsers.py       # CSV/log parsing
-│   │   │       ├── dashboard.py     # Run dashboard + metrics
-│   │   │       ├── curves.py        # Plotly training curves
-│   │   │       ├── visualizations.py # Epoch visualizations
-│   │   │       ├── gt_verification.py # Ground truth verification
-│   │   │       ├── log_viewer.py    # Full log viewer
-│   │   │       └── checkpoints.py   # File browser + checkpoints
+│   │   │   ├── page.py              # Training page shell
+│   │   │   ├── launch/              # Run creation, preflight, runner,
+│   │   │   │                        # controls, dialogs
+│   │   │   ├── monitor/             # Curves, visualizations, GT verification,
+│   │   │   │                        # logs, checkpoints, parsers
+│   │   │   └── compare/tab.py       # Cross-run comparison
 │   │   ├── export/
-│   │   │   └── page.py              # Export page (ONNX/TorchScript)
+│   │   │   ├── page.py              # Framework-first Export page
+│   │   │   ├── weights/             # Exporter engine + shared settings UI
+│   │   │   └── optimization/tab.py  # Fusion, export, INT8, benchmark
 │   │   └── inference/
-│   │       ├── page.py              # Main inference page render
-│   │       ├── model_tab.py         # Model selection tab
-│   │       ├── data_tab.py          # Data input tab (images/video/RTSP)
-│   │       ├── solution_tab.py      # Solution selection + zone drawing
-│   │       ├── run_tab.py           # Run tab + results display
-│   │       ├── detection.py         # Detection utilities (real + demo)
-│   │       └── video.py             # Video/image inference runners
+│   │       ├── page.py              # Framework-first Inference page
+│   │       ├── model/tab.py         # Runtime + weights selection
+│   │       ├── data/tab.py          # Images / video / RTSP input
+│   │       ├── solution/tab.py      # Solutions + zone drawing
+│   │       └── run/                 # Run tab, detection, video, live stream
 │   │
 │   ├── components/
-│   │   ├── sidebar.py               # Navigation sidebar
-│   │   ├── styles.py                # Custom CSS + UI helpers
-│   │   ├── wizard.py                # Step indicator + navigation
+│   │   ├── sidebar.py               # Workspace navigation + status
+│   │   ├── styles.py                # Shared visual system and page chrome
+│   │   ├── wizard.py                # Step indicator + navigation footer
 │   │   ├── project_manager.py       # Project CRUD + state persistence
+│   │   ├── dependencies.py          # Dependency checks + in-app install
 │   │   └── zone_drawer/             # Interactive canvas zone drawing
 │   │
 │   └── utils/
@@ -267,25 +265,34 @@ FlashStudio/
 │       ├── jobs.py                  # Background process tracking
 │       ├── filesystem.py            # Directory size/listing utilities
 │       ├── config.py                # Training config build/save/load
-│       └── training_hooks.py        # FlashDet training callbacks
+│       ├── model_loader.py          # FlashDet / Ultralytics / ONNX / TorchScript runtimes
+│       ├── trainer_launcher.py      # Standalone FlashDet training launcher
+│       ├── training_hooks.py        # FlashDet training callbacks
+│       └── weight_hub.py            # Weight discovery + downloads
 │
 ├── tests/                           # Pytest test suite
 │   ├── conftest.py                  # Shared fixtures
-│   ├── test_constants.py            # Constants validation
+│   ├── test_app.py                  # App shell tests
 │   ├── test_cli.py                  # CLI tests
-│   ├── test_utils/                  # Utils sub-package tests
-│   │   ├── test_init.py
-│   │   ├── test_device.py
-│   │   ├── test_filesystem.py
-│   │   ├── test_config.py
-│   │   └── test_jobs.py
-│   ├── test_pages/                  # Page logic tests
-│   │   └── test_training_parsers.py
-│   └── test_components/
-│       └── test_project_manager.py
+│   ├── test_constants.py            # Constants validation
+│   ├── test_launcher.py             # Launcher tests
+│   ├── test_pipeline_flow.py        # End-to-end workflow state
+│   ├── test_save_dir_compat.py      # Run directory compatibility
+│   ├── test_components/             # Sidebar, wizard, styles, projects, zones
+│   ├── test_core/                   # Core constants
+│   ├── test_pages/                  # Per-page and per-tab tests
+│   │   ├── test_dashboard/
+│   │   ├── test_data/               # upload, download, preview, verify, fix
+│   │   ├── test_model/              # architecture, hyperparams, augment, advanced
+│   │   ├── test_training/           # launch, monitor, parsers
+│   │   ├── test_export/             # page, frameworks, weights
+│   │   └── test_inference/          # model, data, solution, run
+│   └── test_utils/                  # config, device, jobs, loaders, weight hub
 │
-├── .github/workflows/ci.yml        # GitHub Actions CI
+├── demos/                           # README GIFs
+├── docs/mockups/                    # Hero screenshot
 ├── notebooks/
+├── .github/workflows/ci.yml         # GitHub Actions CI
 ├── .streamlit/config.toml
 ├── pyproject.toml
 └── README.md

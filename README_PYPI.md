@@ -29,24 +29,28 @@ launch()
 !pip install flashstudio
 
 from flashstudio import launch
-launch(ngrok_token="YOUR_TOKEN")
+launch()
 ```
+
+FlashStudio detects Colab and uses the built-in proxy — no token, ngrok, or signup required. Pass `ngrok_token="YOUR_TOKEN"` only if you want a stable public URL.
 
 Get a free ngrok token at: https://dashboard.ngrok.com/get-started/your-authtoken
 
 ## Features
 
-- **Training** — FlashDet or Ultralytics backends with live loss curves and run comparison
-- **Framework-specific Model Config** — FlashDet Pico-Zoo backbones, Ultralytics YOLO, YOLOX export
+- **Guided Workflow** — Dashboard → Data → Model → Training → Export → Inference with pipeline readiness and next-step hints
+- **Project Workspaces** — isolated datasets, runs, checkpoints, and saved UI state per project
+- **Data** — Upload, download, preview with annotation overlays, verify, repair, edit boxes, and run quality reports
+- **Framework-first Model Config** — FlashDet Pico-Zoo backbones, Ultralytics YOLO, YOLOX export
+- **Training** — FlashDet or Ultralytics backends with preflight checks, live loss curves, visualizations, logs, and run comparison
 - **Weight Hub** — download FlashDet registry and Ultralytics checkpoints from training or inference
+- **Export** — ONNX and TorchScript export for FlashDet and Ultralytics weights, TensorRT where available
+- **Optimize** — layer/kernel fusion, ONNX parity, INT8 quantization, and FPS/latency benchmarking
 - **Inference** — FlashDet, Ultralytics, ONNX Runtime, TorchScript, and TensorRT models
 - **Live Inference** — RTSP/webcam streaming, multi-camera grid, live FPS and detections
-- **Data** — Upload, download, preview, repair annotations, edit boxes, and run quality reports
-- **Optimize** — layer/kernel fusion, ONNX parity, INT8 quantization, and FPS benchmarking
-- **Model Zoo** — One-click pretrained YOLO checkpoints
+- **Zones & Solutions** — polygon, rectangle, and line zones with 16 built-in solutions
 - **Active Learning** — Export low-confidence detections for review
-- **Export** — ONNX and TorchScript export for FlashDet and Ultralytics weights
-- **Dashboard** — Project overview with recent runs, workspace, and environment details
+- **Dependency Hints** — in-app guidance and one-click installs for optional runtimes
 
 ## Supported Models
 
@@ -69,8 +73,8 @@ Get a free ngrok token at: https://dashboard.ngrok.com/get-started/your-authtoke
 - Python >= 3.10
 - FlashDet (for FlashDet training/inference)
 - Ultralytics + ONNX Runtime for external YOLO/ONNX models
-- TensorRT for `.engine` inference
-- ngrok account (free, for Colab)
+- TensorRT for `.engine` inference (optional)
+- ngrok account (optional, for a stable Colab URL)
 - GPU recommended for training
 
 ## Links

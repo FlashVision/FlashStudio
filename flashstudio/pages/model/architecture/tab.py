@@ -9,6 +9,18 @@ from flashstudio.constants import (
     PICO_NECKS, YOLO_SERIES, YOLO_SIZES,
     LORA_RANK_DEFAULT, LORA_ALPHA_DEFAULT, LORA_DROPOUT_DEFAULT,
 )
+from flashstudio.utils import get_state
+
+
+def _value(key, fallback):
+    val = get_state(key)
+    return fallback if val is None else val
+
+
+def _index(options, key, fallback):
+    options = list(options)
+    val = _value(key, fallback)
+    return options.index(val) if val in options else options.index(fallback)
 
 
 YOLO_PARAMS = {
@@ -84,7 +96,12 @@ def _tab_arch():
 def _flashdet_arch(nc: int):
     col_sel, col_info = st.columns([2, 3])
     with col_sel:
-        model = st.selectbox("Size", list(FLASHDET_MODELS.keys()), key="model_arch")
+        options = list(FLASHDET_MODELS.keys())
+        model = st.selectbox(
+            "Size", options,
+            index=_index(options, "model_arch", options[0]),
+            key="model_arch",
+        )
         info = FLASHDET_MODELS[model]
 
         if model == "FlashDet-Pico":
@@ -95,11 +112,17 @@ def _flashdet_arch(nc: int):
                 current = "LiteBackbone (default)"
             st.session_state["pico_backbone"] = current
             st.selectbox(
-                "Pico-Zoo backbone", PICO_BACKBONES, key="pico_backbone",
+                "Pico-Zoo backbone", PICO_BACKBONES,
+                index=_index(PICO_BACKBONES, "pico_backbone", "LiteBackbone (default)"),
+                key="pico_backbone",
                 help="Every Pico-Zoo family has a matching neck; pick Auto unless you need a specific one.",
             )
             if st.session_state.get("pico_backbone") not in ("LiteBackbone (default)", "PicoBackbone"):
-                st.selectbox("Neck family", PICO_NECKS, key="neck_type")
+                st.selectbox(
+                    "Neck family", PICO_NECKS,
+                    index=_index(PICO_NECKS, "neck_type", PICO_NECKS[0]),
+                    key="neck_type",
+                )
         else:
             st.caption(f"Backbone: {info['backbone']}")
 
@@ -134,10 +157,18 @@ def _flashdet_arch(nc: int):
 def _ultralytics_arch(nc: int):
     col_sel, col_info = st.columns([2, 3])
     with col_sel:
-        series = st.selectbox("Series", YOLO_SERIES, key="yolo_series")
+        series = st.selectbox(
+            "Series", YOLO_SERIES,
+            index=_index(YOLO_SERIES, "yolo_series", YOLO_SERIES[0]),
+            key="yolo_series",
+        )
         _set_shared("arch_family", series)
 
-        size = st.selectbox("Size", YOLO_SIZES, key="yolo_size")
+        size = st.selectbox(
+            "Size", YOLO_SIZES,
+            index=_index(YOLO_SIZES, "yolo_size", YOLO_SIZES[0]),
+            key="yolo_size",
+        )
         last = st.session_state.get("_last_yolo_size")
         if size != last:
             from flashstudio.utils.weight_hub import YOLO_SIZE_MULT

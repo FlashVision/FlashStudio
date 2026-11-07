@@ -114,6 +114,7 @@ def render_training_page():
 
     if "training_active" not in st.session_state:
         st.session_state["training_active"] = False
+    if "training_status" not in st.session_state:
         st.session_state["training_status"] = "Not started"
     if "training_paused" not in st.session_state:
         st.session_state["training_paused"] = False
