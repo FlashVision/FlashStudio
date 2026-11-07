@@ -24,7 +24,7 @@
 
 ## What is FlashStudio? 🤔
 
-Whether you're building an edge device detector, fine-tuning a custom model for your industry, or setting up a multi-camera live surveillance stream, setting up pipelines usually involves gluing together dozen of custom scripts, tensorboard panels, and inference notebooks. 
+Whether you're training a detector for a tiny edge device, fine-tuning a model for a specific industry, or wiring up a multi-camera live stream, getting a vision pipeline off the ground usually means gluing together dozens of one-off scripts, TensorBoard windows, and half-finished inference notebooks.
 
 **FlashStudio** puts everything into a clean, interactive Streamlit workspace. It wraps **FlashDet** and Ultralytics YOLO models into a unified control center where you can manage data, configure architectures, train with real-time feedback, optimize weights, and deploy inference with zero boilerplate.
 
@@ -127,7 +127,7 @@ Test models on images, video files, or live RTSP streams. Draw custom zones and 
 
 ## 🛠️ Development Setup
 
-If you want to contribute or hack on the codebase:
+If you want to run the app from source or contribute to the project:
 
 ```bash
 git clone https://github.com/FlashVision/FlashStudio.git
@@ -135,8 +135,36 @@ cd FlashStudio
 pip install -e .
 ```
 
+Need every optional backend (Ultralytics, ONNX Runtime, TensorRT export, ngrok, …)? Grab the full extra:
+
+```bash
+pip install -e ".[full]"
+```
+
+### Optional extras
+
+| Extra | What it adds |
+|-------|--------------|
+| `full` | Torch, FlashDet export tools, Ultralytics, ONNX Runtime, ONNX Slim, ngrok |
+| `inference` | Ultralytics + ONNX Runtime for the inference page |
+| `ngrok` | Public tunnel support as a Colab fallback |
+| `dev` | Ruff, pytest, and pytest-cov |
+
+### Tests
+
+```bash
+pytest
+```
+
+---
+
+## 🤝 Contributing
+
+Found a bug, have a feature idea, or want to add support for another framework? Issues and pull requests are very welcome. If you're planning something bigger, feel free to open an issue first so we can talk it through before you sink time into it.
+
 ---
 
 ## 📜 License
 
-Distributed under the **Apache 2.0 License**. See [LICENSE](LICENSE) for more information.
+Released under the **Apache 2.0 License**. See [LICENSE](LICENSE) for the full text.
+
