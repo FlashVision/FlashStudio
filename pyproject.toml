@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flashstudio"
-version = "0.2.2"
+version = "0.2.3"
 description = "Interactive Training & Inference UI for FlashDet — runs on Google Colab"
 readme = "README_PYPI.md"
 license = "Apache-2.0"

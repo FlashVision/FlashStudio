@@ -58,3 +58,50 @@ class TestLaunchFunction:
     def test_import(self):
         from flashstudio.launcher import launch
         assert callable(launch)
+
+
+class TestCloudflaredTunnel:
+    def test_tunnel_process_is_kept_alive(self):
+        """The tunnel must stay running, otherwise trycloudflare returns 1033."""
+        from flashstudio import launcher
+
+        class FakeProc:
+            def __init__(self):
+                self.returncode = None
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def kill(self):
+                self.returncode = -9
+
+        fake_proc = FakeProc()
+
+        def fake_popen(cmd, stdout=None, stderr=None):
+            stdout.write(b"Your quick Tunnel: https://unit-test-tunnel.trycloudflare.com\n")
+            stdout.flush()
+            return fake_proc
+
+        launcher._LIVE_TUNNELS.clear()
+        try:
+            with patch.object(launcher, "_cloudflared_binary", return_value="/usr/bin/cloudflared"), \
+                 patch.object(launcher.subprocess, "Popen", side_effect=fake_popen):
+                url = launcher._start_cloudflared_tunnel(8501)
+
+            assert url == "https://unit-test-tunnel.trycloudflare.com"
+            assert fake_proc.poll() is None
+            assert fake_proc in launcher._LIVE_TUNNELS
+        finally:
+            launcher._LIVE_TUNNELS.clear()
+
+    def test_missing_binary_returns_none(self):
+        from flashstudio import launcher
+
+        with patch.object(launcher, "_cloudflared_binary", return_value=None):
+            assert launcher._start_cloudflared_tunnel(8501) is None
