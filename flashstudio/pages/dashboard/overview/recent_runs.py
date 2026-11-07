@@ -31,6 +31,12 @@ def render_recent_runs():
     seen_dirs = set()
     seen_runs = set()
 
+    def _safe_mtime(path: str) -> float:
+        try:
+            return os.path.getmtime(path)
+        except OSError:
+            return 0.0
+
     def _looks_like_run(run_dir: str) -> bool:
         try:
             entries = os.listdir(run_dir)
@@ -49,7 +55,11 @@ def render_recent_runs():
         if real in seen_dirs or not os.path.isdir(real):
             continue
         seen_dirs.add(real)
-        for d in os.listdir(real):
+        try:
+            entries = os.listdir(real)
+        except OSError:
+            continue
+        for d in entries:
             rd = os.path.join(real, d)
             if not os.path.isdir(rd):
                 continue
@@ -61,7 +71,7 @@ def render_recent_runs():
             seen_runs.add(real_run)
             runs.append((d, rd))
 
-    runs.sort(key=lambda item: os.path.getmtime(item[1]), reverse=True)
+    runs.sort(key=lambda item: _safe_mtime(item[1]), reverse=True)
     runs = runs[:MAX_DISPLAY_RUNS]
 
     if not runs:

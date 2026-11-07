@@ -34,7 +34,15 @@ def _apply_weight_selection():
 def _has_weights(family: str) -> bool:
     if st.session_state.get("infer_demo_mode"):
         return True
-    source = st.session_state.get("weight_source", "Upload")
+    source = st.session_state.get("weight_source")
+    if source is None:
+        source = (
+            "Training output"
+            if latest_inference_weight(
+                family, get_state("save_dir") or DEFAULT_SAVE_DIR
+            )
+            else "Upload"
+        )
     if source == "Upload":
         return st.session_state.get("infer_weights_file") is not None
     if source == "Path":
@@ -74,6 +82,14 @@ def _render_weight_downloader(family: str):
                     path = download_flashdet(name)
                     st.session_state["_picked_weight_path"] = path
                     st.session_state["_picked_weight_framework"] = "FlashDet"
+                    has_input = bool(
+                        st.session_state.get("infer_images")
+                        or st.session_state.get("infer_video")
+                        or st.session_state.get("infer_stream_url")
+                    )
+                    st.session_state["_infer_tab_next"] = (
+                        "Run" if has_input else "Data"
+                    )
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Download failed: {exc}")
@@ -102,6 +118,14 @@ def _render_weight_downloader(family: str):
                     path = download_ultralytics(name)
                     st.session_state["_picked_weight_path"] = path
                     st.session_state["_picked_weight_framework"] = "Ultralytics"
+                    has_input = bool(
+                        st.session_state.get("infer_images")
+                        or st.session_state.get("infer_video")
+                        or st.session_state.get("infer_stream_url")
+                    )
+                    st.session_state["_infer_tab_next"] = (
+                        "Run" if has_input else "Data"
+                    )
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Download failed: {exc}")
@@ -127,6 +151,30 @@ def _tab_model(family: str = "FlashDet"):
             "installed FlashDet build; inference works."
         )
 
+    devices = _get_device_options()
+    if st.session_state.get("infer_device") not in devices:
+        st.session_state.pop("infer_device", None)
+    for key, low, high in (
+        ("infer_conf", 0.0, 1.0),
+        ("infer_nms", 0.0, 1.0),
+    ):
+        try:
+            value = float(st.session_state.get(key))
+            if value < low or value > high:
+                raise ValueError
+        except (TypeError, ValueError):
+            st.session_state.pop(key, None)
+    try:
+        size = int(st.session_state.get("infer_img_size"))
+        if size < 320 or size > 1920:
+            raise ValueError
+    except (TypeError, ValueError):
+        st.session_state.pop("infer_img_size", None)
+    filter_classes = _get_class_names()
+    selected_filter = st.session_state.get("infer_class_filter")
+    if selected_filter and any(name not in filter_classes for name in selected_filter):
+        st.session_state.pop("infer_class_filter", None)
+
     col1, col2 = st.columns(2)
     with col1:
         with st.container(border=True):
@@ -142,7 +190,6 @@ def _tab_model(family: str = "FlashDet"):
                 st.slider("NMS IoU", 0.0, 1.0, INFER_NMS_THRESHOLD, 0.05,
                           key="infer_nms")
                 st.selectbox("Device", _get_device_options(), key="infer_device")
-            filter_classes = _get_class_names()
             st.multiselect("Class filter (empty = all)", filter_classes, default=[],
                            key="infer_class_filter")
             st.checkbox(
@@ -175,8 +222,15 @@ def _tab_model(family: str = "FlashDet"):
                     runtime, "the selected inference runtime",
                     key_suffix=f"runtime_{runtime.lower()}_{family.lower()}",
                 )
-            ws = st.radio("Source", ["Upload", "Path", "Training output"],
-                          key="weight_source", horizontal=True)
+            source_index = 0
+            if "weight_source" not in st.session_state:
+                sd = get_state("save_dir") or DEFAULT_SAVE_DIR
+                if latest_inference_weight(family, sd):
+                    source_index = 2
+            ws = st.radio(
+                "Source", ["Upload", "Path", "Training output"],
+                index=source_index, key="weight_source", horizontal=True,
+            )
             if ws == "Upload":
                 up = st.file_uploader(
                     "File", type=INFER_UPLOAD_TYPES.get(family, ["pt", "pth"]),

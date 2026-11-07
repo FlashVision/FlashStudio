@@ -72,7 +72,13 @@ class TestToCocoFormatEdgeCases:
             "dets": [["unknown_class_xyz", "0.90", "[10, 10, 100, 100]"]],
         }]
         coco = _to_coco_format(results)
-        assert coco["annotations"][0]["category_id"] == 0
+        category_id = coco["annotations"][0]["category_id"]
+        assert category_id > 0
+        assert any(
+            category["id"] == category_id
+            and category["name"] == "unknown_class_xyz"
+            for category in coco["categories"]
+        )
 
     def test_multiple_images(self):
         from flashstudio.pages.inference.run.detection import _to_coco_format

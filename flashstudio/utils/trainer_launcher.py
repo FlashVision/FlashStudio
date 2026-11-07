@@ -283,9 +283,14 @@ def _coco_to_yolo(train_dir: str, val_dir: str, output_dir: str,
     if not names:
         raise RuntimeError("No classes found in the COCO annotations.")
     name_to_idx = {name: i for i, name in enumerate(names)}
+    # Never silently map an unknown category to an unrelated class index.
+    for name in merged.values():
+        if name not in name_to_idx:
+            name_to_idx[name] = len(names)
+            names.append(name)
     cat_to_idx = {
-        cid: name_to_idx.get(name, i if i < len(names) else len(names) - 1)
-        for i, (cid, name) in enumerate(sorted(merged.items()))
+        cid: name_to_idx[name]
+        for cid, name in merged.items()
     }
 
     os.makedirs(output_dir, exist_ok=True)
@@ -308,10 +313,17 @@ def _coco_to_yolo(train_dir: str, val_dir: str, output_dir: str,
             height = float(image.get("height") or 0)
             if width <= 0 or height <= 0:
                 continue
-            src_path = os.path.join(src, fname)
+
+            # Keep safe relative paths, but never allow an annotation to point
+            # outside the split directory.
+            rel_name = os.path.normpath(str(fname)).lstrip("/\\")
+            if rel_name.startswith(".."):
+                rel_name = os.path.basename(rel_name)
+            src_path = os.path.join(src, rel_name)
             if not os.path.isfile(src_path):
                 continue
-            dst_path = os.path.join(img_out, fname)
+            dst_path = os.path.join(img_out, rel_name)
+            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
             if not os.path.exists(dst_path):
                 try:
                     os.symlink(os.path.abspath(src_path), dst_path)
@@ -332,8 +344,10 @@ def _coco_to_yolo(train_dir: str, val_dir: str, output_dir: str,
                 nw = max(0.0, min(1.0, bw / width))
                 nh = max(0.0, min(1.0, bh / height))
                 lines.append(f"{cls} {cx:.6f} {cy:.6f} {nw:.6f} {nh:.6f}")
-            with open(os.path.join(lbl_out, os.path.splitext(fname)[0] + ".txt"),
-                      "w", encoding="utf-8") as f:
+            label_rel = os.path.splitext(rel_name)[0] + ".txt"
+            label_path = os.path.join(lbl_out, label_rel)
+            os.makedirs(os.path.dirname(label_path), exist_ok=True)
+            with open(label_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
 
     yaml_path = os.path.join(output_dir, "data.yaml")
@@ -438,6 +452,7 @@ def _run_ultralytics(params: dict, save_dir: str) -> int:
 
     model_name = _ultralytics_model_name(params)
     yolo_root = os.path.join(save_dir, "yolo_dataset")
+    shutil.rmtree(yolo_root, ignore_errors=True)
     data_yaml = _coco_to_yolo(
         train_images, val_images, yolo_root,
         class_names=_class_names(params) or None,

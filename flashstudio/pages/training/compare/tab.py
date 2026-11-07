@@ -31,11 +31,20 @@ def _run_dirs(workspace: str) -> list:
     if not os.path.isdir(workspace):
         return []
     found = []
-    for name in sorted(os.listdir(workspace)):
+    try:
+        entries = sorted(os.listdir(workspace))
+    except OSError:
+        return found
+    for name in entries:
         path = os.path.join(workspace, name)
         if _is_run(path):
             found.append((name, path))
-    found.sort(key=lambda item: os.path.getmtime(item[1]), reverse=True)
+    def _mtime(item):
+        try:
+            return os.path.getmtime(item[1])
+        except OSError:
+            return 0.0
+    found.sort(key=_mtime, reverse=True)
     return found
 
 
@@ -53,6 +62,9 @@ def _render_compare_tab():
     runs = _run_dirs(workspace)
     if not runs:
         st.info("No runs found in the workspace.")
+        if st.button("Go to Launch", key="compare_go_launch"):
+            st.session_state["_training_tab_next"] = "Launch"
+            st.rerun()
         return
 
     labels = {name: path for name, path in runs}
@@ -76,15 +88,27 @@ def _render_compare_tab():
         if best_map is None and history and history.get("mAP50"):
             vals = [v for v in history["mAP50"] if v is not None]
             best_map = max(vals) if vals else None
+        try:
+            epochs_value = int(meta.get("epochs"))
+        except (TypeError, ValueError):
+            epochs_value = None
         rows.append({
             "Run": name,
             "Status": meta.get("status", "—"),
             "Model": meta.get("model", "—"),
-            "Epochs": meta.get("epochs", "—"),
-            "Best mAP@0.5": f"{best_map:.4f}" if best_map is not None else "—",
+            "Epochs": epochs_value,
+            "Best mAP@0.5": round(float(best_map), 4) if best_map is not None else None,
             "Size": meta.get("size", "—"),
         })
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(
+        rows, use_container_width=True, hide_index=True,
+        column_config={
+            "Epochs": st.column_config.NumberColumn("Epochs", format="%d"),
+            "Best mAP@0.5": st.column_config.NumberColumn(
+                "Best mAP@0.5", format="%.4f"
+            ),
+        },
+    )
 
     map_fig = go.Figure()
     loss_fig = go.Figure()

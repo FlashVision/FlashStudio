@@ -19,6 +19,8 @@ def _build_cfg():
 
 
 def _apply_cfg(config):
+    if not isinstance(config, dict):
+        raise ValueError("Config must be a YAML mapping")
     if "model" in config:
         m = config["model"]
         for k, sk in [("family", "arch_family"), ("variant", "model_arch"), ("pretrained", "pretrain_option")]:

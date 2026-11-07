@@ -12,6 +12,10 @@ from flashstudio.constants import (
     QLORA_DTYPE_DEFAULT, CHUNKED_LOSS_CHUNK_SIZE,
 )
 from flashstudio.pages.training._common import _get_save_dir
+from flashstudio.utils.dataset_paths import (
+    ensure_coco_annotation, find_validation_dir, has_images,
+    load_coco_classes, resolve_annotation_file,
+)
 
 
 def _generate_run_name() -> str:
@@ -45,14 +49,20 @@ def _start_training():
     # Validate dataset paths exist
     if not train_images or not os.path.isdir(train_images):
         dataset_name = st.session_state.get("dataset_name", "")
-        dataset_id = dataset_name.lower().replace(" ", "").replace("(demo)", "sample")
+        dataset_id = "".join(
+            ch for ch in dataset_name.lower().replace("(demo)", "sample")
+            if ch.isalnum()
+        )
         try:
             from flashstudio.components.project_manager import get_active_project_data_dir
             data_base = get_active_project_data_dir() or DEFAULT_DATA_DIR
         except Exception:
             data_base = DEFAULT_DATA_DIR
-        for candidate_id in ["sample", "coco2017", "coco2017-val", "voc2007", "voc2012"]:
-            if candidate_id in dataset_id or dataset_id in candidate_id:
+        for candidate_id in ["coco2017-val", "voc2007", "voc2012", "coco2017", "sample"]:
+            candidate_key = "".join(
+                ch for ch in candidate_id.lower() if ch.isalnum()
+            )
+            if candidate_key in dataset_id or dataset_id in candidate_key:
                 candidate_dir = os.path.join(data_base, candidate_id)
                 if os.path.isdir(os.path.join(candidate_dir, "train")):
                     train_images = os.path.join(candidate_dir, "train")
@@ -74,14 +84,11 @@ def _start_training():
         )
         return
 
-    # Auto-find val path if missing but train exists
+    # Auto-find val path if missing but train exists.  This must handle both
+    # dataset/train + dataset/valid and dataset/train/images +
+    # dataset/valid/images layouts.
     if not val_images or not os.path.isdir(val_images):
-        parent = os.path.dirname(train_images)
-        for vname in ("valid", "val", "test"):
-            vpath = os.path.join(parent, vname)
-            if os.path.isdir(vpath):
-                val_images = vpath
-                break
+        val_images = find_validation_dir(train_images)
 
     if not val_images or not os.path.isdir(val_images):
         st.session_state["training_active"] = False
@@ -93,32 +100,53 @@ def _start_training():
         )
         return
 
-    # Auto-detect classes from annotation if not already set
+    # Auto-detect classes from annotation if not already set.  The annotation
+    # may live in a parent folder or an annotations/ sibling.
     _cls_raw = st.session_state.get("class_names", "")
     if isinstance(_cls_raw, list):
         _cls_raw = "\n".join(_cls_raw)
     if not _cls_raw.strip():
-        ann_file = os.path.join(train_images, "_annotations.coco.json")
-        if not os.path.isfile(ann_file):
-            json_files = [f for f in os.listdir(train_images) if f.endswith(".json")] if os.path.isdir(train_images) else []
-            if json_files:
-                ann_file = os.path.join(train_images, json_files[0])
-        if os.path.isfile(ann_file):
-            try:
-                with open(ann_file, encoding="utf-8") as _af:
-                    ann_data = json.load(_af)
-                cats = ann_data.get("categories", [])
-                if cats:
-                    sorted_cats = sorted(cats, key=lambda c: c.get("id", 0))
-                    names = [c["name"] for c in sorted_cats]
-                    st.session_state["class_names"] = "\n".join(names)
-                    st.session_state["num_classes"] = len(names)
-            except (json.JSONDecodeError, KeyError, TypeError):
-                pass
+        ann_file = resolve_annotation_file(
+            train_images,
+            split="train",
+            hint=st.session_state.get("train_ann_path", ""),
+        )
+        names = load_coco_classes(ann_file) if ann_file else []
+        if names:
+            st.session_state["class_names"] = "\n".join(names)
+            st.session_state["num_classes"] = len(names)
 
-    # Auto-detect and convert format if not COCO
-    parent_dir = os.path.dirname(train_images) if os.path.basename(train_images) in ("train", "images") else train_images
-    detected_fmt = detect_dataset_format(parent_dir)
+    # Auto-detect and convert format if not COCO.  Prefer the dataset root so
+    # an existing validation split is converted too, instead of re-splitting
+    # only the train folder.
+    parent_dir = (
+        os.path.dirname(train_images)
+        if os.path.basename(train_images) in ("train", "images", "imgs")
+        else train_images
+    )
+    conversion_root = parent_dir
+    if os.path.basename(train_images).lower() in ("images", "imgs"):
+        split_directory = os.path.dirname(train_images)
+        candidate_root = os.path.dirname(split_directory)
+        if find_validation_dir(train_images, root=candidate_root):
+            conversion_root = candidate_root
+    detected_fmt = detect_dataset_format(conversion_root)
+    if detected_fmt == "unknown":
+        from flashstudio.pages.data.helpers import _find_labels
+
+        label_roots = (
+            conversion_root,
+            os.path.dirname(conversion_root),
+            os.path.dirname(os.path.dirname(conversion_root)),
+        )
+        for candidate in label_roots:
+            if _find_labels(candidate):
+                detected_fmt = "txt"
+                # Convert from the common dataset root so an existing
+                # validation split is preserved.
+                conversion_root = candidate
+                break
+    parent_dir = conversion_root
 
     if detected_fmt in ("txt", "voc"):
         st.warning(f"Dataset format detected: **{detected_fmt}**. Converting to COCO JSON...")
@@ -131,8 +159,25 @@ def _start_training():
             if raw_names.strip():
                 class_names = [c.strip() for c in raw_names.strip().split("\n") if c.strip()]
 
-            convert_dataset(source_dir=parent_dir, output_dir=output_dir,
-                            target_format="coco", class_names=class_names)
+            import shutil
+
+            shutil.rmtree(output_dir, ignore_errors=True)
+            try:
+                convert_dataset(
+                    source_dir=parent_dir, output_dir=output_dir,
+                    target_format="coco", class_names=class_names,
+                )
+            except Exception:
+                if detected_fmt != "txt":
+                    raise
+                from flashstudio.pages.data.helpers import _convert_yolo_layout
+
+                shutil.rmtree(output_dir, ignore_errors=True)
+                stats = _convert_yolo_layout(
+                    parent_dir, output_dir, class_names=class_names
+                )
+                if not stats:
+                    raise
 
             train_images = os.path.join(output_dir, "train")
             val_dir = os.path.join(output_dir, "valid")
@@ -148,49 +193,59 @@ def _start_training():
             st.session_state["training_error"] = f"Format conversion failed: {e}"
             return
 
-    # Verify COCO annotation file exists (check train dir, then parent)
-    train_ann = os.path.join(train_images, "_annotations.coco.json")
-    if not os.path.isfile(train_ann):
-        ann_candidates = [f for f in os.listdir(train_images) if f.endswith(".json")] if os.path.isdir(train_images) else []
-        if ann_candidates:
-            st.info(f"Found annotation file: `{ann_candidates[0]}` (expected `_annotations.coco.json`)")
-        else:
-            # Check parent directory (layout: train/images/ with train/_annotations.coco.json)
-            parent_dir = os.path.dirname(train_images)
-            parent_ann = os.path.join(parent_dir, "_annotations.coco.json")
-            parent_jsons = [f for f in os.listdir(parent_dir) if f.endswith(".json")] if os.path.isdir(parent_dir) else []
-            if os.path.isfile(parent_ann) or parent_jsons:
-                import shutil
-                src_ann = parent_ann if os.path.isfile(parent_ann) else os.path.join(parent_dir, parent_jsons[0])
-                dst_ann = os.path.join(train_images, os.path.basename(src_ann))
-                shutil.copy2(src_ann, dst_ann)
-                st.info(f"Copied annotation from parent: `{os.path.basename(src_ann)}`")
-            else:
-                st.session_state["training_active"] = False
-                st.session_state["training_status"] = "Missing annotations"
-                st.session_state["training_error"] = (
-                    f"Missing annotations! FlashDet expects _annotations.coco.json in: {train_images}"
-                )
-                return
+    # FlashDet requires the annotation file to be named exactly
+    # ``_annotations.coco.json`` inside each image directory.  Find it even
+    # when the upload kept it in a parent split folder or annotations/ sibling
+    # and link/copy it into place.
+    train_ann = ensure_coco_annotation(
+        train_images,
+        split="train",
+        hint=st.session_state.get("train_ann_path", ""),
+    )
+    if train_ann:
+        st.session_state["train_ann_path"] = train_ann
+    if not train_ann or not os.path.isfile(
+        os.path.join(train_images, "_annotations.coco.json")
+    ):
+        st.session_state["training_active"] = False
+        st.session_state["training_status"] = "Missing annotations"
+        st.session_state["training_error"] = (
+            f"Missing annotations! FlashDet expects _annotations.coco.json in: {train_images}"
+        )
+        return
 
     # Verify validation annotations too — silently training on the train split
     # produces meaningless metrics.
-    val_ann = os.path.join(val_images, "_annotations.coco.json")
-    if not os.path.isfile(val_ann):
-        val_jsons = [f for f in os.listdir(val_images) if f.endswith(".json")]
-        if val_jsons:
-            import shutil
-            src_ann = os.path.join(val_images, val_jsons[0])
-            shutil.copy2(src_ann, val_ann)
-            st.info(f"Using validation annotation file: `{os.path.basename(src_ann)}`")
-        else:
-            st.session_state["training_active"] = False
-            st.session_state["training_status"] = "Missing val annotations"
-            st.session_state["training_error"] = (
-                f"Missing validation annotations! Expected "
-                f"_annotations.coco.json in: {val_images}"
-            )
-            return
+    val_ann = ensure_coco_annotation(
+        val_images,
+        split="val",
+        hint=st.session_state.get("val_ann_path", ""),
+    )
+    if val_ann:
+        st.session_state["val_ann_path"] = val_ann
+    if not val_ann or not os.path.isfile(
+        os.path.join(val_images, "_annotations.coco.json")
+    ):
+        st.session_state["training_active"] = False
+        st.session_state["training_status"] = "Missing val annotations"
+        st.session_state["training_error"] = (
+            f"Missing validation annotations! Expected "
+            f"_annotations.coco.json in: {val_images}"
+        )
+        return
+
+    # Conversion (YOLO/VOC -> COCO) may have created the first COCO
+    # annotations; detect classes again now that they exist.
+    remaining_classes = st.session_state.get("class_names", "")
+    if isinstance(remaining_classes, list):
+        remaining_classes = "\n".join(remaining_classes)
+    if not remaining_classes.strip():
+        names = load_coco_classes(
+            os.path.join(train_images, "_annotations.coco.json")
+        )
+        if names:
+            st.session_state["class_names"] = "\n".join(names)
+            st.session_state["num_classes"] = len(names)
 
     # Normalize dataset layout for FlashDet: it computes
     # data_root = dirname(train_images) and expects
@@ -198,41 +253,72 @@ def _start_training():
     data_root = os.path.dirname(os.path.normpath(train_images))
     train_dir_in_root = os.path.join(data_root, "train")
     if os.path.abspath(train_images) != os.path.abspath(train_dir_in_root):
-        if os.path.isdir(train_dir_in_root) and os.path.isfile(
-            os.path.join(train_dir_in_root, "_annotations.coco.json")
-        ):
-            train_images = train_dir_in_root
+        if os.path.islink(train_dir_in_root):
+            if os.path.realpath(train_dir_in_root) != os.path.realpath(train_images):
+                try:
+                    os.unlink(train_dir_in_root)
+                except OSError:
+                    pass
+        if os.path.isdir(train_dir_in_root):
+            if not os.path.isfile(os.path.join(train_dir_in_root, "_annotations.coco.json")):
+                ensure_coco_annotation(
+                    train_dir_in_root, split="train",
+                    hint=st.session_state.get("train_ann_path", ""),
+                )
+            if (
+                os.path.isfile(os.path.join(train_dir_in_root, "_annotations.coco.json"))
+                and has_images(train_dir_in_root)
+            ):
+                train_images = train_dir_in_root
         elif not os.path.exists(train_dir_in_root):
             try:
-                os.symlink(os.path.abspath(train_images), train_dir_in_root)
+                os.symlink(
+                    os.path.abspath(train_images), train_dir_in_root,
+                    target_is_directory=True,
+                )
             except OSError:
                 pass
 
     valid_dir_in_root = os.path.join(data_root, "valid")
     if os.path.abspath(val_images) != os.path.abspath(valid_dir_in_root):
         if os.path.islink(valid_dir_in_root):
-            try:
-                os.unlink(valid_dir_in_root)
-            except OSError:
-                pass
+            current_target = os.path.realpath(valid_dir_in_root)
+            if current_target != os.path.realpath(val_images):
+                try:
+                    os.unlink(valid_dir_in_root)
+                except OSError:
+                    pass
         if not os.path.exists(valid_dir_in_root):
             try:
-                os.symlink(os.path.abspath(val_images), valid_dir_in_root)
+                os.symlink(
+                    os.path.abspath(val_images), valid_dir_in_root,
+                    target_is_directory=True,
+                )
             except OSError:
                 pass
-        elif os.path.isdir(valid_dir_in_root) and os.path.isfile(
-            os.path.join(valid_dir_in_root, "_annotations.coco.json")
-        ):
-            val_images = valid_dir_in_root
-        else:
-            st.session_state["training_active"] = False
-            st.session_state["training_status"] = "Invalid val layout"
-            st.session_state["training_error"] = (
-                f"`{valid_dir_in_root}` exists but has no _annotations.coco.json. "
-                "Remove it or point Val at that directory."
-            )
-            return
 
+        if os.path.isdir(valid_dir_in_root):
+            # A real directory can contain a nested images/ folder (mixed
+            # train/valid layouts).  FlashDet's verifier only needs an
+            # annotation file here; the dataloader keeps using val_images.
+            if not os.path.isfile(os.path.join(valid_dir_in_root, "_annotations.coco.json")):
+                ensure_coco_annotation(
+                    valid_dir_in_root, split="val",
+                    hint=st.session_state.get("val_ann_path", ""),
+                )
+            if (
+                os.path.isfile(os.path.join(valid_dir_in_root, "_annotations.coco.json"))
+                and has_images(valid_dir_in_root)
+            ):
+                val_images = valid_dir_in_root
+
+    if not os.path.isfile(os.path.join(train_dir_in_root, "_annotations.coco.json")):
+        st.session_state["training_active"] = False
+        st.session_state["training_status"] = "Invalid dataset layout"
+        st.session_state["training_error"] = (
+            f"FlashDet requires `{train_dir_in_root}/_annotations.coco.json`."
+        )
+        return
     if not os.path.isfile(os.path.join(valid_dir_in_root, "_annotations.coco.json")):
         st.session_state["training_active"] = False
         st.session_state["training_status"] = "Invalid dataset layout"

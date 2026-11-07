@@ -104,6 +104,25 @@ def _check_training_process():
         )
 
 
+def _training_tabs(labels):
+    """Stateful training tabs so a running/completed run stays visible."""
+    import inspect
+
+    next_tab = st.session_state.pop("_training_tab_next", None)
+    params = inspect.signature(st.tabs).parameters
+    if "default" not in params or "on_change" not in params:
+        return st.tabs(labels)
+    if next_tab in labels:
+        st.session_state["_training_tab"] = next_tab
+    selected = st.session_state.get("_training_tab")
+    if selected not in labels:
+        selected = labels[0]
+        st.session_state["_training_tab"] = selected
+    return st.tabs(
+        labels, key="_training_tab", default=selected, on_change="rerun"
+    )
+
+
 def render_training_page():
     """Render training dashboard — ultra-compact."""
     from flashstudio.components.styles import render_page_header
@@ -155,11 +174,24 @@ def render_training_page():
 
     goto_monitor = st.session_state.pop("_goto_monitor", False)
     is_active = st.session_state.get("training_active", False)
+    # Keep results visible after a run finishes; otherwise the tab order flips
+    # back to Launch and hides the completed run's metrics.
+    monitor_first = bool(
+        goto_monitor or is_active
+        or status in ("Complete", "Running", "Paused")
+    )
+    if goto_monitor:
+        st.session_state["_training_tab_next"] = "Monitor"
 
-    if goto_monitor or is_active:
-        tab_monitor, tab_start, tab_compare = st.tabs(["Monitor", "Launch", "Compare"])
+    if monitor_first:
+        labels = ["Monitor", "Launch", "Compare"]
     else:
-        tab_start, tab_monitor, tab_compare = st.tabs(["Launch", "Monitor", "Compare"])
+        labels = ["Launch", "Monitor", "Compare"]
+    tabs = _training_tabs(labels)
+    if monitor_first:
+        tab_monitor, tab_start, tab_compare = tabs
+    else:
+        tab_start, tab_monitor, tab_compare = tabs
 
     with tab_start:
         _render_start_tab()

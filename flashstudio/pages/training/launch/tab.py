@@ -278,7 +278,7 @@ def _render_start_tab():
             with b1:
                 if st.session_state.get("training_active"):
                     if st.session_state.get("training_paused"):
-                        if st.button("Continue", use_container_width=True, key="btn_resume_active"):
+                        if st.button("Resume", use_container_width=True, key="btn_resume_active"):
                             _resume_active_training()
                     else:
                         if st.button("Pause", use_container_width=True, key="btn_pause_training"):
@@ -287,8 +287,9 @@ def _render_start_tab():
                     st.button("Pause", use_container_width=True, key="btn_pause_disabled",
                               disabled=True)
             with b2:
-                if st.button("Resume", use_container_width=True,
-                             key="btn_resume_training", help="Resume from a checkpoint"):
+                if st.button("Resume from checkpoint", use_container_width=True,
+                             key="btn_resume_training",
+                             help="Resume a run from a saved checkpoint"):
                     st.session_state["show_resume_dialog"] = True
             with b3:
                 if st.button("Clean", use_container_width=True,

@@ -1,5 +1,7 @@
 """Dashboard overview — orchestrates the overview sections."""
 
+import os
+
 import streamlit as st
 
 from flashstudio.pages.dashboard.overview.project_banner import render_project_banner
@@ -36,14 +38,21 @@ def render_overview(project, stats):
                 if st.button("Projects", key="dash_links_projects", use_container_width=True):
                     st.session_state["show_project_manager"] = True
                     st.rerun()
-                if st.button("Datasets", key="dash_links_data", use_container_width=True):
+                if st.button("Data", key="dash_links_data", use_container_width=True):
+                    has_data = bool(
+                        st.session_state.get("train_img_path")
+                        and os.path.isdir(str(st.session_state.get("train_img_path")))
+                    )
+                    st.session_state["_data_tab_next"] = (
+                        "Preview" if has_data else "Upload"
+                    )
                     st.session_state["current_step"] = 1
                     st.rerun()
             with q2:
                 if st.button("Inference", key="dash_links_infer", use_container_width=True):
                     st.session_state["current_step"] = 5
                     st.rerun()
-                if st.button("Optimize", key="dash_links_export", use_container_width=True):
+                if st.button("Export", key="dash_links_export", use_container_width=True):
                     st.session_state["current_step"] = 4
                     st.rerun()
 

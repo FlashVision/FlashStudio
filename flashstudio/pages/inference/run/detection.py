@@ -59,13 +59,27 @@ def _resolve_weights_path() -> str:
     ``Upload`` deliberately ignores ``infer_weights_path`` so a stale
     "Training output" path can never shadow a freshly uploaded checkpoint.
     """
-    source = st.session_state.get("weight_source", "Upload")
+    source = st.session_state.get("weight_source")
+    if source is None:
+        from flashstudio.pages.inference._common import latest_inference_weight
+
+        family = st.session_state.get("infer_family", "FlashDet")
+        save_dir = get_state("save_dir") or DEFAULT_SAVE_DIR
+        source = (
+            "Training output"
+            if latest_inference_weight(family, save_dir)
+            else "Upload"
+        )
 
     if source == "Upload":
         up = st.session_state.get("infer_weights_file")
         if not up:
             return ""
-        key = (getattr(up, "name", ""), getattr(up, "size", 0))
+        key = (
+            getattr(up, "name", ""),
+            getattr(up, "size", 0),
+            getattr(up, "file_id", ""),
+        )
         cached = st.session_state.get("_infer_weights_tmp_path", "")
         if cached and os.path.isfile(cached) and st.session_state.get("_infer_weights_tmp_key") == key:
             return cached
@@ -162,10 +176,10 @@ def _detect_demo(image):
     return sorted(dets, key=lambda x: float(x[1]), reverse=True)
 
 
-def _draw_boxes_cv2(frame, raw_results):
+def _draw_boxes_cv2(frame, raw_results, class_names=None):
     """Draw bounding boxes on a BGR cv2 frame from Predictor output [(bbox, score, cls_id), ...]."""
     import cv2
-    label_list = _get_class_names() or COCO_CLASSES
+    label_list = list(class_names or _get_class_names() or COCO_CLASSES)
     for bbox, score, cls_id in raw_results:
         x1, y1, x2, y2 = [int(v) for v in (bbox.tolist() if hasattr(bbox, 'tolist') else list(bbox))]
         cid = int(cls_id)
@@ -199,6 +213,12 @@ def _draw_boxes(image, dets):
 
 def _to_coco_format(results, class_names=None):
     names = list(class_names or COCO_CLASSES)
+    # Preserve detections whose class is not in the configured list by adding
+    # them as categories instead of writing an invalid category_id 0.
+    for result in results:
+        for cls, _conf, _bbox in result.get("dets", []):
+            if cls not in names:
+                names.append(cls)
     coco = {
         "images": [],
         "annotations": [],
@@ -213,7 +233,9 @@ def _to_coco_format(results, class_names=None):
         })
         for cls, conf, bbox_str in r["dets"]:
             bbox = json.loads(bbox_str.replace("'", '"'))
-            category_id = names.index(cls) + 1 if cls in names else 0
+            if cls not in names:
+                continue
+            category_id = names.index(cls) + 1
             coco["annotations"].append({
                 "id": aid, "image_id": iid,
                 "category_id": category_id,

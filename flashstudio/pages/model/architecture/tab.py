@@ -113,7 +113,6 @@ def _flashdet_arch(nc: int):
             st.session_state["pico_backbone"] = current
             st.selectbox(
                 "Pico-Zoo backbone", PICO_BACKBONES,
-                index=_index(PICO_BACKBONES, "pico_backbone", "LiteBackbone (default)"),
                 key="pico_backbone",
                 help="Every Pico-Zoo family has a matching neck; pick Auto unless you need a specific one.",
             )
@@ -178,14 +177,14 @@ def _ultralytics_arch(nc: int):
             st.session_state["yolo_depth_mult"] = depth
             st.session_state["_last_yolo_size"] = size
 
+        st.session_state.setdefault("yolo_width_mult", 0.50)
         st.slider(
             "Width ×", 0.20, 1.50,
-            float(st.session_state.get("yolo_width_mult", 0.50)),
             step=0.05, key="yolo_width_mult",
         )
+        st.session_state.setdefault("yolo_depth_mult", 0.33)
         st.slider(
             "Depth ×", 0.10, 1.50,
-            float(st.session_state.get("yolo_depth_mult", 0.33)),
             step=0.01, key="yolo_depth_mult",
         )
         if series == "YOLOv9":

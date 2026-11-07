@@ -91,6 +91,7 @@ class TestCloudflaredTunnel:
         launcher._LIVE_TUNNELS.clear()
         try:
             with patch.object(launcher, "_cloudflared_binary", return_value="/usr/bin/cloudflared"), \
+                 patch.object(launcher, "_public_url_is_live", return_value=True), \
                  patch.object(launcher.subprocess, "Popen", side_effect=fake_popen):
                 url = launcher._start_cloudflared_tunnel(8501)
 
@@ -105,3 +106,43 @@ class TestCloudflaredTunnel:
 
         with patch.object(launcher, "_cloudflared_binary", return_value=None):
             assert launcher._start_cloudflared_tunnel(8501) is None
+
+    def test_unreachable_url_is_rejected(self):
+        """A printed-but-dead quick tunnel must not be handed to the user."""
+        from flashstudio import launcher
+
+        class FakeProc:
+            def __init__(self):
+                self.returncode = None
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def kill(self):
+                self.returncode = -9
+
+        fake_proc = FakeProc()
+
+        def fake_popen(cmd, stdout=None, stderr=None):
+            stdout.write(b"Your quick Tunnel: https://dead-tunnel.trycloudflare.com\n")
+            stdout.flush()
+            return fake_proc
+
+        launcher._LIVE_TUNNELS.clear()
+        try:
+            with patch.object(launcher, "_cloudflared_binary", return_value="/usr/bin/cloudflared"), \
+                 patch.object(launcher, "_public_url_is_live", return_value=False), \
+                 patch.object(launcher.subprocess, "Popen", side_effect=fake_popen):
+                url = launcher._start_cloudflared_tunnel(8501)
+
+            assert url is None
+            assert fake_proc.poll() is not None
+            assert fake_proc not in launcher._LIVE_TUNNELS
+        finally:
+            launcher._LIVE_TUNNELS.clear()

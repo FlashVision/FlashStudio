@@ -9,6 +9,44 @@ from flashstudio.constants import (
 )
 
 
+def _render_export_status(framework: str):
+    """One-line readiness strip: checkpoint, artifacts, and the next action."""
+    from flashstudio.pages.export._common import weights_with_mtime
+    from flashstudio.pages.export.weights.settings import _get_export_save_dir
+
+    weights = [
+        path
+        for path, _mtime in weights_with_mtime(framework, _get_export_save_dir())
+    ]
+    exported = st.session_state.get("exported_files") or []
+    count = len(exported)
+
+    if weights:
+        checkpoint = os.path.basename(weights[0])
+        if len(weights) > 1:
+            checkpoint += f" (+{len(weights) - 1})"
+        checkpoint_html = f"<b>{checkpoint}</b>"
+    else:
+        checkpoint_html = "<b>none</b>"
+
+    if count:
+        next_step = "download it below, then run it in Inference"
+    elif weights:
+        next_step = "choose a format and press Export"
+    else:
+        next_step = "train a model or download a starter checkpoint"
+
+    files = f"{count} file" if count == 1 else f"{count} files"
+    st.markdown(
+        f'<div class="info-bar">'
+        f"Checkpoint: {checkpoint_html} · "
+        f"Exported: <b>{files}</b> · "
+        f"Next: {next_step}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_export_page():
     from flashstudio.components.styles import render_page_header
     from flashstudio.pages.export._common import EXPORT_FRAMEWORKS, FRAMEWORK_NOTES
@@ -31,7 +69,11 @@ def render_export_page():
     )
     previous = st.session_state.get("_export_framework_last")
     if previous and previous != framework:
-        st.session_state.pop("exported_files", None)
+        for key in (
+            "exported_files", "opt_fusion", "opt_onnx", "opt_int8",
+            "opt_benchmark", "ul_opt_benchmark",
+        ):
+            st.session_state.pop(key, None)
     st.session_state["_export_framework_last"] = framework
     st.caption(FRAMEWORK_NOTES.get(framework, ""))
     from flashstudio.components.dependencies import render_dependency_hint
@@ -39,6 +81,12 @@ def render_export_page():
     render_dependency_hint(
         framework, "converting and optimizing checkpoints",
         key_suffix=f"export_{framework.lower()}",
+    )
+
+    _render_export_status(framework)
+    st.caption(
+        "**Convert** creates the deployment file. **Optimize** fuses, quantizes, "
+        "or benchmarks that file."
     )
 
     tab_convert, tab_optimize = st.tabs(["Convert", "Optimize"])

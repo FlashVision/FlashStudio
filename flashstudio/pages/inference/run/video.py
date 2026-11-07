@@ -175,7 +175,9 @@ def _run_flashdet_video(video_file, solution_name, weights):
                     annotated, results = solution.process_frame(frame)
                 else:
                     results = predictor(frame)
-                    annotated = _draw_boxes_cv2(frame, results)
+                    annotated = _draw_boxes_cv2(
+                        frame, results, getattr(predictor, "class_names", None)
+                    )
                 frame_out = annotated if annotated is not None else frame
                 if isinstance(results, (list, tuple)):
                     total_dets += len(results)

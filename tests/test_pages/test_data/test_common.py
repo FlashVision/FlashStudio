@@ -69,9 +69,25 @@ class TestDatasetAlreadyDownloaded:
             f.write("x")
         with open(os.path.join(valid, "img.jpg"), "w") as f:
             f.write("x")
+        for split in (train, valid):
+            with open(os.path.join(split, "_annotations.coco.json"), "w") as f:
+                f.write("{}")
 
         result = _dataset_already_downloaded("test", tmp_dir)
         assert result == tmp_dir
+
+    def test_images_without_annotations_are_not_complete(self, tmp_dir):
+        from flashstudio.pages.data._common import _dataset_already_downloaded
+
+        train = os.path.join(tmp_dir, "train")
+        valid = os.path.join(tmp_dir, "valid")
+        os.makedirs(train)
+        os.makedirs(valid)
+        for split in (train, valid):
+            with open(os.path.join(split, "img.jpg"), "w") as f:
+                f.write("x")
+
+        assert _dataset_already_downloaded("test", tmp_dir) is None
 
     def test_missing_valid(self, tmp_dir):
         from flashstudio.pages.data._common import _dataset_already_downloaded
@@ -106,6 +122,9 @@ class TestDatasetAlreadyDownloaded:
             f.write("x")
         with open(os.path.join(val, "img.jpg"), "w") as f:
             f.write("x")
+        for split in (train, val):
+            with open(os.path.join(split, "_annotations.coco.json"), "w") as f:
+                f.write("{}")
 
         result = _dataset_already_downloaded("test", tmp_dir)
         assert result == tmp_dir
@@ -123,6 +142,22 @@ class TestExternalDatasets:
             assert "imgs" in ds
             assert "cls" in ds
             assert "url" in ds
+
+    def test_is_archive_url_accepts_direct_archives(self):
+        from flashstudio.pages.data._common import _is_archive_url
+        assert _is_archive_url("https://example.com/data.zip")
+        assert _is_archive_url("https://example.com/data.tar")
+        assert _is_archive_url("https://example.com/data.tar.gz")
+        assert _is_archive_url("https://example.com/data.tgz")
+        assert _is_archive_url("https://example.com/data.zip?download=1")
+
+    def test_is_archive_url_rejects_project_pages(self):
+        from flashstudio.pages.data._common import _is_archive_url
+        assert not _is_archive_url("")
+        assert not _is_archive_url("https://github.com/eg4000/SKU110K_CVPR19")
+        assert not _is_archive_url("https://zenodo.org/records/4298502")
+        assert not _is_archive_url("https://example.com/annotations.json")
+        assert not _is_archive_url("http://shuoyang1213.me/WIDERFACE/")
 
     def test_quick_start_datasets(self):
         from flashstudio.pages.data._common import QUICK_START

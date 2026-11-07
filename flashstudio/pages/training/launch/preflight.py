@@ -11,6 +11,8 @@ def _run_preflight_checks() -> list:
     """Run pre-flight validation checks before training. Returns list of (label, ok, msg)."""
     checks = []
 
+    from flashstudio.utils.dataset_paths import find_validation_dir
+
     train_path = st.session_state.get("train_img_path", "")
     if train_path and os.path.isdir(train_path):
         checks.append(("Training data", True, ""))
@@ -18,37 +20,33 @@ def _run_preflight_checks() -> list:
         checks.append(("Training data", False, "No training images directory"))
 
     val_path = st.session_state.get("val_img_path", "")
+    if not val_path or not os.path.isdir(val_path):
+        val_path = find_validation_dir(train_path) if train_path else ""
     if val_path and os.path.isdir(val_path):
         checks.append(("Validation split", True, ""))
     else:
         checks.append(("Validation split", False, "No validation images directory"))
 
+    from flashstudio.utils.dataset_paths import resolve_annotation_file
+
     if train_path and os.path.isdir(train_path):
-        ann_found = False
-        # Check in train_img_path itself
-        ann_file = os.path.join(train_path, "_annotations.coco.json")
-        json_files = [f for f in os.listdir(train_path) if f.endswith(".json")]
-        if os.path.isfile(ann_file) or json_files:
-            ann_found = True
-        # Check parent directory (common layout: train/images/ + train/_annotations.coco.json)
-        if not ann_found:
-            parent = os.path.dirname(train_path)
-            parent_ann = os.path.join(parent, "_annotations.coco.json")
-            parent_jsons = [f for f in os.listdir(parent) if f.endswith(".json")] if os.path.isdir(parent) else []
-            if os.path.isfile(parent_ann) or parent_jsons:
-                ann_found = True
-        # Check session state annotation path
-        if not ann_found and st.session_state.get("train_ann_path"):
-            if os.path.isfile(st.session_state["train_ann_path"]):
-                ann_found = True
+        ann_file = resolve_annotation_file(
+            train_path,
+            split="train",
+            hint=st.session_state.get("train_ann_path", ""),
+        )
+        ann_found = bool(ann_file)
         checks.append(("Train annotations", ann_found, "" if ann_found else "No COCO annotations found"))
     else:
         checks.append(("Train annotations", False, "No training data directory"))
 
     if val_path and os.path.isdir(val_path):
-        val_ann = os.path.join(val_path, "_annotations.coco.json")
-        val_jsons = [f for f in os.listdir(val_path) if f.endswith(".json")]
-        val_ok = os.path.isfile(val_ann) or bool(val_jsons)
+        val_ann = resolve_annotation_file(
+            val_path,
+            split="val",
+            hint=st.session_state.get("val_ann_path", ""),
+        )
+        val_ok = bool(val_ann)
         checks.append(("Validation annotations", val_ok, "" if val_ok else "No COCO annotations found"))
     else:
         checks.append(("Validation annotations", False, "No validation data directory"))

@@ -8,13 +8,19 @@ from PIL import Image
 
 from flashstudio.pages.data.fix.annotations import load_coco
 from flashstudio.pages.data.fix.tab import _coco_path, _yolo_label_dir
+from flashstudio.pages.data._common import _load_data_prompt
 
 
 def _image_files(img_dir: str) -> list:
     if not os.path.isdir(img_dir):
         return []
-    exts = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
-    return sorted(f for f in os.listdir(img_dir) if f.lower().endswith(exts))
+    exts = (".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff")
+    return sorted(
+        os.path.relpath(os.path.join(root, name), img_dir)
+        for root, _dirs, files in os.walk(img_dir)
+        for name in files
+        if name.lower().endswith(exts)
+    )
 
 
 def dataset_quality(images_dir: str, ann_path: str = "", labels_dir: str = "") -> dict:
@@ -63,14 +69,18 @@ def dataset_quality(images_dir: str, ann_path: str = "", labels_dir: str = "") -
             report["widths"].append(int(img.get("width", 0) or 0)) if img.get("width") else None
             report["heights"].append(int(img.get("height", 0) or 0)) if img.get("height") else None
         counts_by_image = {}
+        image_dims = {
+            img.get("id"): (img.get("width"), img.get("height"))
+            for img in data.get("images", [])
+        }
         for ann in data.get("annotations", []):
             report["annotations"] += 1
             name = cats.get(ann.get("category_id"), str(ann.get("category_id")))
             report["classes"][name] = report["classes"].get(name, 0) + 1
             counts_by_image[ann.get("image_id")] = counts_by_image.get(ann.get("image_id"), 0) + 1
             bbox = ann.get("bbox") or [0, 0, 0, 0]
-            img = next((i for i in data.get("images", []) if i.get("id") == ann.get("image_id")), {})
-            iw, ih = float(img.get("width", 0) or 0), float(img.get("height", 0) or 0)
+            width, height = image_dims.get(ann.get("image_id"), (0, 0))
+            iw, ih = float(width or 0), float(height or 0)
             if iw > 0 and ih > 0 and len(bbox) == 4:
                 ratio = (float(bbox[2]) * float(bbox[3])) / (iw * ih)
                 if ratio < 0.001:
@@ -85,9 +95,16 @@ def dataset_quality(images_dir: str, ann_path: str = "", labels_dir: str = "") -
             if counts_by_image.get(iid, 0) == 0 and name:
                 report["empty_images"].append(name)
     elif labels_dir and os.path.isdir(labels_dir):
+        from flashstudio.utils import get_class_names_list
+
+        class_names = get_class_names_list()
         for name in images:
             stem = os.path.splitext(name)[0]
             path = os.path.join(labels_dir, stem + ".txt")
+            if not os.path.isfile(path):
+                path = os.path.join(
+                    labels_dir, os.path.splitext(os.path.basename(name))[0] + ".txt"
+                )
             if not os.path.isfile(path):
                 report["empty_images"].append(name)
                 continue
@@ -104,7 +121,12 @@ def dataset_quality(images_dir: str, ann_path: str = "", labels_dir: str = "") -
                         continue
                     count += 1
                     report["annotations"] += 1
-                    report["classes"][f"class_{cid}"] = report["classes"].get(f"class_{cid}", 0) + 1
+                    label = (
+                        class_names[cid]
+                        if 0 <= cid < len(class_names)
+                        else f"class_{cid}"
+                    )
+                    report["classes"][label] = report["classes"].get(label, 0) + 1
                     ratio = w * h
                     if ratio < 0.001:
                         report["tiny_boxes"] += 1
@@ -134,10 +156,13 @@ def _render_quality():
     label_key = "train_label_path" if split == "Train" else "val_label_path"
     img_dir = st.session_state.get(img_key, "")
     if not img_dir or not os.path.isdir(img_dir):
-        st.info(f"No {split.lower()} images directory is configured.")
+        _load_data_prompt(
+            f"No {split.lower()} images directory is configured.",
+            "quality_load_data",
+        )
         return
 
-    ann_path = _coco_path(img_dir)
+    ann_path = _coco_path(img_dir, "train" if split == "Train" else "val")
     labels_dir = _yolo_label_dir(img_dir, st.session_state.get(label_key))
     if not ann_path and not (os.path.isdir(labels_dir) and any(
         f.endswith(".txt") for f in os.listdir(labels_dir)
@@ -145,11 +170,16 @@ def _render_quality():
         st.info("No COCO JSON or YOLO labels found.")
         return
 
+    report_key = f"_quality_report_{split.lower()}"
     if st.button("Run quality report", type="primary", key="quality_run"):
         with st.spinner("Checking images and annotations..."):
-            st.session_state["_quality_report"] = dataset_quality(img_dir, ann_path, labels_dir)
+            try:
+                st.session_state[report_key] = dataset_quality(img_dir, ann_path, labels_dir)
+            except Exception as exc:
+                st.error(f"Quality report failed: {exc}")
+                return
 
-    report = st.session_state.get("_quality_report")
+    report = st.session_state.get(report_key)
     if not report:
         return
 

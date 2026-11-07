@@ -18,17 +18,21 @@ def render_pipeline_status():
     train_status = st.session_state.get("training_status", "")
     exported = st.session_state.get("exported_files")
 
+    training_accent = (
+        "#D97706" if train_status in ("Running", "Paused") else None
+    )
     steps = [
-        ("Data", dataset_ready, dataset or "Not loaded"),
-        ("Model", bool(get_state("model_framework")), model or "Not set"),
-        ("Training", train_status in ("Complete", "Running"), train_status or "Not started"),
-        ("Export", bool(exported), "Ready" if exported else "Pending"),
+        ("Data", dataset_ready, dataset or "Not loaded", None),
+        ("Model", bool(get_state("model_framework")), model or "Not set", None),
+        ("Training", train_status == "Complete", train_status or "Not started",
+         training_accent),
+        ("Export", bool(exported), "Ready" if exported else "Pending", None),
     ]
-    done = sum(1 for _label, ok, _detail in steps if ok)
+    done = sum(1 for _label, ok, _detail, _accent in steps if ok)
     st.caption(f"{done} of {len(steps)} stages ready")
 
-    for label, ok, detail in steps:
-        color = "#059669" if ok else "#D1D5DB"
+    for label, ok, detail, accent in steps:
+        color = accent or ("#059669" if ok else "#D1D5DB")
         detail_html = html.escape(str(detail))
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:.6rem;padding:.4rem 0;'

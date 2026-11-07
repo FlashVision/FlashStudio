@@ -9,17 +9,20 @@ import streamlit as st
 from flashstudio.pages.data.fix.annotations import (
     fix_coco, fix_yolo, scan_coco, scan_yolo, _yolo_label_dir,
 )
+from flashstudio.pages.data._common import _load_data_prompt
 
 
-def _coco_path(img_dir: str) -> str:
-    candidate = os.path.join(img_dir, "_annotations.coco.json")
-    if os.path.isfile(candidate):
-        return candidate
-    if os.path.isdir(img_dir):
-        jsons = sorted(f for f in os.listdir(img_dir) if f.endswith(".json"))
-        if jsons:
-            return os.path.join(img_dir, jsons[0])
-    return ""
+def _coco_path(img_dir: str, split: str = "") -> str:
+    """Find the COCO annotation file for a split.
+
+    Searches the split directory, its parent, and common ``annotations/``
+    folders.  ``split`` ("train"/"val") is used to avoid mixing the train and
+    validation annotation files.
+    """
+    from flashstudio.utils.dataset_paths import resolve_annotation_file
+
+    hint = st.session_state.get(f"{split}_ann_path", "") if split else ""
+    return resolve_annotation_file(img_dir, split=split, hint=hint)
 
 
 def _issue_rows(report: dict) -> list:
@@ -64,10 +67,13 @@ def _render_fix():
     img_dir = st.session_state.get(img_key, "")
 
     if not img_dir or not os.path.isdir(img_dir):
-        st.info(f"No {split.lower()} images directory is configured. Load a dataset first.")
+        _load_data_prompt(
+            f"No {split.lower()} images directory is configured. Load a dataset first.",
+            "fix_load_data",
+        )
         return
 
-    ann_path = _coco_path(img_dir)
+    ann_path = _coco_path(img_dir, "train" if split == "Train" else "val")
     labels_dir = _yolo_label_dir(img_dir, st.session_state.get(label_key))
     fmt = "COCO" if ann_path else ("YOLO" if os.path.isdir(labels_dir) and any(
         f.endswith(".txt") for f in os.listdir(labels_dir)
@@ -160,6 +166,9 @@ def _render_fix():
                     )
                 st.success(f"Annotations repaired: {result}")
                 st.session_state.pop(report_key, None)
+                st.session_state.pop("_last_verify_ok", None)
+                st.session_state["_auto_verify"] = True
+                st.session_state["_data_tab_next"] = "Verify"
                 st.rerun()
             except Exception as exc:
                 st.error(f"Fix failed: {exc}")

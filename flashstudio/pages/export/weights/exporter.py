@@ -212,12 +212,18 @@ def _run_export(weights_path, img_size, opset=13, dynamic=True, fmt="onnx"):
                     # ``dynamo=True`` is the default in PyTorch >= 2.9 and
                     # currently fails on FlashDet's output structure.  The
                     # legacy exporter handles this model correctly.
-                    torch.onnx.export(
-                        model, dummy, out, opset_version=effective_opset,
+                    export_kwargs = dict(
+                        opset_version=effective_opset,
                         input_names=["images"], output_names=["output"],
                         dynamic_axes=dyn,
-                        dynamo=False,
                     )
+                    try:
+                        torch.onnx.export(model, dummy, out, dynamo=False,
+                                          **export_kwargs)
+                    except TypeError as exc:
+                        if "dynamo" not in str(exc):
+                            raise
+                        torch.onnx.export(model, dummy, out, **export_kwargs)
             else:
                 traced = torch.jit.trace(_TorchScriptWrapper(model), dummy)
                 traced.save(out)

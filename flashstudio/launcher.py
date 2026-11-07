@@ -126,6 +126,29 @@ def _cloudflared_binary() -> str | None:
     return binary
 
 
+def _public_url_is_live(url: str, timeout: float = 20.0) -> bool:
+    """Return True once the public URL actually serves the app.
+
+    Cloudflare prints the hostname before the tunnel is connected, and a dead
+    quick tunnel answers with HTTP 530 ("error 1033"), so checking the URL is
+    the only reliable way to know it is usable.
+    """
+    import urllib.request
+
+    deadline = _time.monotonic() + timeout
+    while _time.monotonic() < deadline:
+        try:
+            request = urllib.request.Request(
+                url, headers={"User-Agent": "FlashStudio"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                if response.status == 200:
+                    return True
+        except Exception:
+            pass
+        _time.sleep(1.0)
+    return False
+
+
 def _start_cloudflared_tunnel(port: int) -> str | None:
     """Start a free Cloudflare quick tunnel (no sign-up required).
 
@@ -143,7 +166,8 @@ def _start_cloudflared_tunnel(port: int) -> str | None:
     try:
         with open(log_path, "wb") as log_file:
             proc = subprocess.Popen(
-                [binary, "tunnel", "--no-autoupdate", "--protocol", "http2",
+                [binary, "tunnel", "--no-autoupdate",
+                 "--protocol", "http2", "--edge-ip-version", "4",
                  "--url", f"http://127.0.0.1:{port}"],
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
@@ -165,10 +189,13 @@ def _start_cloudflared_tunnel(port: int) -> str | None:
             output = ""
         match = url_re.search(output)
         if match:
-            return match.group(0)
+            url = match.group(0)
+            if _public_url_is_live(url):
+                return url
+            break
         _time.sleep(0.5)
 
-    # Timed out or cloudflared exited — clean up so we don't leak a dead tunnel.
+    # Timed out, exited, or the URL never became reachable — clean up.
     if proc.poll() is None:
         try:
             proc.terminate()
@@ -177,6 +204,15 @@ def _start_cloudflared_tunnel(port: int) -> str | None:
             proc.kill()
     if proc in _LIVE_TUNNELS:
         _LIVE_TUNNELS.remove(proc)
+    try:
+        log_tail = log_path.read_text(
+            encoding="utf-8", errors="replace").strip().splitlines()[-4:]
+    except OSError:
+        log_tail = []
+    if log_tail:
+        print("\n  cloudflared log:")
+        for line in log_tail:
+            print(f"    {line}")
     try:
         log_path.unlink(missing_ok=True)
     except OSError:
@@ -224,6 +260,11 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
     """Launch in Google Colab with a public URL that works on any device."""
     import urllib.request
 
+    try:
+        from flashstudio import __version__
+        print(f"  FlashStudio v{__version__}")
+    except Exception:
+        pass
     print("  Starting FlashStudio...", end="", flush=True)
 
     proc = subprocess.Popen(
@@ -282,11 +323,12 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
                     print(" Done!")
 
         if not public_url:
-            print(" Skipped (using Colab proxy)")
+            print(" Unavailable (falling back to Colab proxy)")
 
     # 3) Colab's built-in proxy (fallback — desktop browser only)
+    colab_proxy_url = _get_colab_proxy_url(port)
     if not public_url:
-        public_url = _get_colab_proxy_url(port)
+        public_url = colab_proxy_url
 
     # --- Display results ---
     print(f"\n{'=' * 60}")
@@ -295,6 +337,8 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
         print(f"  Open: {public_url}")
         if tunnel_type:
             print("  (works on mobile & any device)")
+            if colab_proxy_url:
+                print(f"  Direct link (this browser): {colab_proxy_url}")
         else:
             print("  ⚠ This URL only works in this browser.")
             print("    On mobile? Re-run with: launch(share=True)")

@@ -10,7 +10,7 @@ from PIL import Image
 from flashstudio.pages.inference.run.detection import (
     _detect, _draw_boxes, _to_coco_format,
 )
-from flashstudio.pages.inference._common import _get_class_names
+from flashstudio.pages.inference._common import SOLUTIONS, _get_class_names
 from flashstudio.pages.inference.run.video import _run_video
 
 
@@ -44,20 +44,48 @@ def _tab_run():
         st.metric("Device", str(device_label).upper())
 
     input_type = st.session_state.get("infer_input_type", "Images")
-    has_data = st.session_state.get("infer_images") or st.session_state.get("infer_video") or st.session_state.get("infer_stream_url")
+    if input_type == "Images":
+        has_data = bool(st.session_state.get("infer_images"))
+        empty_hint = "No images yet. Add images in the Data tab."
+    elif input_type == "Video":
+        has_data = bool(st.session_state.get("infer_video"))
+        empty_hint = "No video yet. Upload a video in the Data tab."
+    else:
+        has_data = bool(st.session_state.get("infer_stream_url"))
+        empty_hint = "No stream URL yet. Enter an RTSP URL in the Data tab."
 
     with st.container(border=True):
         st.markdown("#### Run")
         if st.session_state.get("infer_demo_mode"):
             st.warning("Demo mode is ON — detections are fabricated for UI previews.")
         if not has_data:
-            st.info("No data yet. Add images, a video, or a stream in the Data tab.")
+            st.info(empty_hint)
+            if st.button("Add input in Data", key="run_add_input"):
+                st.session_state["_infer_tab_next"] = "Data"
+                st.rerun()
             return
+
+        solution_name = st.session_state.get(
+            "selected_solution", "None (Detection Only)"
+        )
+        solution = SOLUTIONS.get(solution_name, {})
+        needs_zone = bool(solution.get("needs_zone"))
+        has_zone = bool(
+            st.session_state.get("zone_line_points")
+            or st.session_state.get("zone_polygons")
+        )
+        if needs_zone and not has_zone:
+            st.warning("This solution needs a zone — draw one in the Solution tab first.")
+            if st.button("Open Solution", key="run_open_solution"):
+                st.session_state["_infer_tab_next"] = "Solution"
+                st.rerun()
 
         rc1, rc2 = st.columns([1, 3])
         with rc1:
-            run = st.button("Run inference", type="primary", key="run_infer_btn",
-                            use_container_width=True)
+            run = st.button(
+                "Run inference", type="primary", key="run_infer_btn",
+                use_container_width=True, disabled=needs_zone and not has_zone,
+            )
         with rc2:
             st.checkbox("Per-frame details", False, key="show_per_frame")
             st.caption("Runs with the selected model, runtime, and solution.")
@@ -68,7 +96,7 @@ def _tab_run():
             elif input_type == "Video":
                 _run_video()
             else:
-                st.info("Use the Live tab for continuous RTSP inference.")
+                st.info("Switch **Run mode** to **Live** for continuous RTSP inference.")
 
     with st.container(border=True):
         st.markdown("#### Results")
@@ -89,8 +117,15 @@ def _run_images():
     results = []
     total_time = 0
     progress = st.progress(0)
+    skipped = []
     for i, f in enumerate(images):
-        img = Image.open(f).convert("RGB")
+        try:
+            with Image.open(f) as source:
+                img = source.convert("RGB")
+        except Exception as exc:
+            skipped.append(f"{getattr(f, 'name', 'image')}: {exc}")
+            progress.progress((i + 1) / len(images))
+            continue
         t0 = time.perf_counter()
         dets = _detect(img)
         elapsed = time.perf_counter() - t0
@@ -99,6 +134,10 @@ def _run_images():
                          "inference_time_ms": elapsed * 1000, "width": img.width, "height": img.height})
         progress.progress((i + 1) / len(images))
     progress.empty()
+    if skipped:
+        from flashstudio.utils import flash
+
+        flash("Skipped unreadable image(s): " + "; ".join(skipped[:10]), "warning")
     st.session_state["infer_img_results"] = results
     st.session_state["infer_total_time"] = total_time
     st.rerun()

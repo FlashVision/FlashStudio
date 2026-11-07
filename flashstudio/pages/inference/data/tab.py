@@ -10,6 +10,27 @@ from flashstudio.constants import (
 )
 
 
+def _advance_to_run():
+    """After adding input data, move to Run (or Model if none is selected)."""
+    if not (
+        st.session_state.get("infer_images")
+        or st.session_state.get("infer_video")
+        or st.session_state.get("infer_stream_url")
+    ):
+        return
+    try:
+        from flashstudio.pages.inference.run.detection import _resolve_weights_path
+
+        has_model = bool(_resolve_weights_path()) or bool(
+            st.session_state.get("infer_demo_mode")
+        )
+    except Exception:
+        has_model = False
+    st.session_state["_infer_tab_next"] = "Run" if has_model else "Model"
+    if st.session_state.get("infer_input_type") == "RTSP":
+        st.session_state["_infer_run_mode"] = "Live"
+
+
 def _tab_data():
     input_type = st.radio(
         "Input", ["Images", "Video", "RTSP"], horizontal=True,
@@ -27,6 +48,7 @@ def _tab_data():
                     "Images", type=["jpg", "jpeg", "png", "webp", "bmp"],
                     accept_multiple_files=True, key="infer_images",
                     label_visibility="collapsed",
+                    on_change=_advance_to_run,
                 )
                 if uploaded:
                     cols = st.columns(min(len(uploaded), MAX_PREVIEW_IMAGES))
@@ -42,6 +64,7 @@ def _tab_data():
                 st.file_uploader(
                     "Video", type=["mp4", "avi", "mov", "mkv"],
                     key="infer_video", label_visibility="collapsed",
+                    on_change=_advance_to_run,
                 )
                 vid = st.session_state.get("infer_video")
                 if vid:
@@ -90,7 +113,7 @@ def _tab_data():
                 if st.button("Test connection", key="test_stream",
                              use_container_width=True):
                     _test_stream()
-                st.caption("Live RTSP works best with the Live tab for continuous inference.")
+                st.caption("Choose Run → Live for continuous RTSP inference.")
 
 
 def _get_video_metadata(video_file):

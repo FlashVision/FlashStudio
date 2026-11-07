@@ -2,6 +2,8 @@
 
 import streamlit as st
 
+from flashstudio.utils import get_state
+
 
 def _tab_adv():
     st.markdown("#### Memory, distributed & IO")
@@ -11,29 +13,38 @@ def _tab_adv():
             st.markdown("#### Memory")
             ac1, ac2 = st.columns(2)
             with ac1:
-                st.checkbox("Activation checkpoint", False, key="activation_checkpointing")
-                st.checkbox("Activation offload", False, key="activation_offloading")
+                st.checkbox("Activation checkpoint", bool(get_state("activation_checkpointing")),
+                            key="activation_checkpointing")
+                st.checkbox("Activation offload", bool(get_state("activation_offloading")),
+                            key="activation_offloading")
             with ac2:
-                st.checkbox("Optimizer in backward", False, key="optimizer_in_bwd")
-                st.checkbox("torch.compile", False, key="compile_model")
-            st.checkbox("8-bit optimizer", False, key="use_8bit_optimizer")
-            st.checkbox("Chunked loss", False, key="chunked_loss",
+                st.checkbox("Optimizer in backward", bool(get_state("optimizer_in_bwd")),
+                            key="optimizer_in_bwd")
+                st.checkbox("torch.compile", bool(get_state("compile_model")),
+                            key="compile_model")
+            st.checkbox("8-bit optimizer", bool(get_state("use_8bit_optimizer")),
+                        key="use_8bit_optimizer")
+            st.checkbox("Chunked loss", bool(get_state("chunked_loss")), key="chunked_loss",
                         help="Not used by the bundled FlashDet Trainer backend; ignored when enabled.")
             if st.session_state.get("chunked_loss"):
-                st.number_input("Chunk size", 256, 4096, 1024, key="chunk_size")
+                chunk = int(get_state("chunk_size") or 1024)
+                chunk = max(256, min(4096, chunk))
+                st.number_input("Chunk size", 256, 4096, chunk, key="chunk_size")
                 st.caption("Chunked loss is ignored by the bundled FlashDet Trainer backend.")
             st.markdown("#### Performance")
-            st.checkbox("Channels-last (NHWC)", False, key="channels_last",
+            st.checkbox("Channels-last (NHWC)", bool(get_state("channels_last")),
+                        key="channels_last",
                         help="Convert the model to channels-last memory format.")
-            st.checkbox("cuDNN benchmark", False, key="cudnn_benchmark",
+            st.checkbox("cuDNN benchmark", bool(get_state("cudnn_benchmark")),
+                        key="cudnn_benchmark",
                         help="Autotune cuDNN kernels (CUDA only).")
-            st.checkbox("TF32 matmul", False, key="tf32",
+            st.checkbox("TF32 matmul", bool(get_state("tf32")), key="tf32",
                         help="Allow TF32 on Ampere+ GPUs (CUDA only).")
 
     with col2:
         with st.container(border=True):
             st.markdown("#### Distributed & IO")
-            st.checkbox("Multi-GPU (DDP)", False, key="ddp")
+            st.checkbox("Multi-GPU (DDP)", bool(get_state("ddp")), key="ddp")
 
             nc = st.session_state.get("num_classes", 0)
             cls_names = st.session_state.get("class_names", "")
@@ -60,9 +71,9 @@ def _tab_adv():
             st.text_input("Save directory", key="save_dir", placeholder=default_save)
             rc1, rc2 = st.columns(2)
             with rc1:
-                st.checkbox("Save best only", False, key="save_best",
+                st.checkbox("Save best only", bool(get_state("save_best")), key="save_best",
                             help="Delete resumable 'latest' checkpoints after training.")
             with rc2:
-                st.checkbox("Resume", False, key="resume_training")
+                st.checkbox("Resume", bool(get_state("resume_training")), key="resume_training")
             if st.session_state.get("resume_training"):
                 st.text_input("Checkpoint", placeholder="checkpoint_last.pth", key="resume_path")

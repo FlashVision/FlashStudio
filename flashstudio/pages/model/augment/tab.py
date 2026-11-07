@@ -2,6 +2,8 @@
 
 import streamlit as st
 
+from flashstudio.utils import get_state
+
 
 def _tab_aug():
     st.markdown("#### Augmentation policy")
@@ -9,9 +11,9 @@ def _tab_aug():
     with col1:
         with st.container(border=True):
             st.markdown("#### Multi-Image")
-            st.checkbox("Mosaic (4-image)", True, key="aug_mosaic")
-            st.checkbox("MixUp", False, key="aug_mixup")
-            st.checkbox("CopyPaste", False, key="aug_copypaste")
+            st.checkbox("Mosaic (4-image)", bool(get_state("aug_mosaic")), key="aug_mosaic")
+            st.checkbox("MixUp", bool(get_state("aug_mixup")), key="aug_mixup")
+            st.checkbox("CopyPaste", bool(get_state("aug_copypaste")), key="aug_copypaste")
     with col2:
         with st.container(border=True):
             st.markdown("#### Built-in (always on)")

@@ -177,7 +177,11 @@ def render_export_settings(framework: str = "FlashDet", key_prefix: str = "conve
             export_fmt = st.selectbox("Format", formats, key=fmt_key)
         with c2:
             current_opset = st.session_state.get("export_opset", EXPORT_OPSET_DEFAULT)
-            if not isinstance(current_opset, int) or current_opset < EXPORT_OPSET_MIN:
+            if (
+                not isinstance(current_opset, int)
+                or current_opset < EXPORT_OPSET_MIN
+                or current_opset > EXPORT_OPSET_MAX
+            ):
                 st.session_state["export_opset"] = EXPORT_OPSET_DEFAULT
             st.number_input("Opset", EXPORT_OPSET_MIN, EXPORT_OPSET_MAX,
                             EXPORT_OPSET_DEFAULT, key="export_opset")

@@ -190,7 +190,7 @@ def save_project_state():
     state_keys = tuple(dict.fromkeys(CONFIG_KEYS + (
         "dataset_classes", "dataset_id", "dataset_output_path",
         "train_ann_path", "val_ann_path", "detected_format",
-        "class_file", "resume_path", "training_status",
+        "class_file", "resume_path", "training_status", "exported_files",
         "infer_model_arch", "infer_conf", "infer_nms", "infer_img_size",
         "infer_device", "selected_solution",
     )))
@@ -301,6 +301,8 @@ def duplicate_project(project_id: str, new_name: str) -> dict:
             if isinstance(value, str) and value.startswith(src_data):
                 state[key] = dst_data + value[len(src_data):]
         state["save_dir"] = get_project_runs_dir(new_project["id"])
+        # Runs/exports are not copied, so stale artifact paths must not follow.
+        state.pop("exported_files", None)
         with open(os.path.join(dst_dir, "session_state.json"), "w") as f:
             json.dump(state, f, indent=2)
 
@@ -565,6 +567,15 @@ def _clear_session_for_new_project():
     """Clear all per-project session state when switching/creating a project."""
     import signal
 
+    # Stop a dataset download that belongs to the old project.
+    if st.session_state.get("_dataset_download"):
+        try:
+            from flashstudio.pages.data.helpers import _cancel_dataset_download
+
+            _cancel_dataset_download()
+        except Exception:
+            pass
+
     # Stop a training process that belongs to the old project.
     proc = st.session_state.get("_training_process")
     pid = st.session_state.get("training_pid")
@@ -595,7 +606,7 @@ def _clear_session_for_new_project():
         # Dataset
         "dataset_classes", "dataset_id", "dataset_output_path",
         "train_ann_path", "val_ann_path", "detected_format",
-        "train_label_path", "val_label_path",
+        "train_label_path", "val_label_path", "_dataset_download",
         # Training runtime
         "training_active", "training_status", "training_pid", "training_error",
         "training_log_file", "training_paused", "training_start_time",

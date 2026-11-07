@@ -502,6 +502,15 @@ def inject_custom_css():
     .step-active .step-bar { background: var(--fs-primary); }
     .step-done .step-bar { background: #10B981; }
     .step-done .step-label { color: var(--fs-body); }
+
+    /* streamlit-autorefresh is an invisible timer component; without this
+       rule its iframe reserves a large blank area in some Streamlit versions. */
+    iframe[src*="streamlit_autorefresh.st_autorefresh"] {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        border: 0 !important;
+    }
     </style>
     """,
         unsafe_allow_html=True,

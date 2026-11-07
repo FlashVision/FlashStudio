@@ -24,6 +24,14 @@ def _choice(key, options, fallback):
     return val if val in options else fallback
 
 
+def _clamp(key, low, high, fallback, cast=float):
+    try:
+        value = cast(_value(key, fallback))
+    except (TypeError, ValueError):
+        value = cast(fallback)
+    return max(cast(low), min(cast(high), value))
+
+
 def _tab_hyper():
     st.markdown("#### Training schedule")
     col1, col2 = st.columns(2)
@@ -34,7 +42,8 @@ def _tab_hyper():
             with hc1:
                 st.number_input(
                     "Epochs", min_value=1, max_value=10000,
-                    value=int(_value("epochs", TRAIN_EPOCHS)), step=10, key="epochs",
+                    value=int(_clamp("epochs", 1, 10000, TRAIN_EPOCHS, int)),
+                    step=10, key="epochs",
                 )
                 st.select_slider(
                     "Batch size", BATCH_SIZE_OPTIONS,
@@ -49,11 +58,12 @@ def _tab_hyper():
             with hc2:
                 st.slider(
                     "Learning rate", 1e-5, 1e-1,
-                    float(_value("lr", TRAIN_LR)), format="%.5f", key="lr",
+                    _clamp("lr", 1e-5, 1e-1, TRAIN_LR),
+                    format="%.5f", key="lr",
                 )
                 st.slider(
                     "Weight decay", 0.0, 0.1,
-                    float(_value("weight_decay", TRAIN_WEIGHT_DECAY)),
+                    _clamp("weight_decay", 0.0, 0.1, TRAIN_WEIGHT_DECAY),
                     format="%.3f", key="weight_decay",
                 )
                 st.selectbox(
@@ -69,22 +79,23 @@ def _tab_hyper():
             sc1, sc2 = st.columns(2)
             with sc1:
                 st.slider("Warmup epochs", 0, 20,
-                          int(_value("warmup_epochs", TRAIN_WARMUP_EPOCHS)),
+                          int(_clamp("warmup_epochs", 0, 20, TRAIN_WARMUP_EPOCHS, int)),
                           key="warmup_epochs")
                 st.slider("LR final ratio", 0.01, 0.5,
-                          float(_value("lr_final_ratio", TRAIN_LR_FINAL_RATIO)),
+                          _clamp("lr_final_ratio", 0.01, 0.5, TRAIN_LR_FINAL_RATIO),
                           format="%.2f", key="lr_final_ratio")
                 st.slider("Data workers", 0, 16,
-                          int(_value("num_workers", TRAIN_NUM_WORKERS)),
+                          int(_clamp("num_workers", 0, 16, TRAIN_NUM_WORKERS, int)),
                           key="num_workers")
             with sc2:
                 st.slider("Patience", 5, 100,
-                          int(_value("patience", TRAIN_PATIENCE)), key="patience")
+                          int(_clamp("patience", 5, 100, TRAIN_PATIENCE, int)),
+                          key="patience")
                 st.number_input("Grad accumulation", 1, 16,
-                                int(_value("grad_accum", TRAIN_GRAD_ACCUM)),
+                                int(_clamp("grad_accum", 1, 16, TRAIN_GRAD_ACCUM, int)),
                                 key="grad_accum")
                 st.slider("Validation interval", 1, 20,
-                          int(_value("val_interval", TRAIN_VAL_INTERVAL)),
+                          int(_clamp("val_interval", 1, 20, TRAIN_VAL_INTERVAL, int)),
                           key="val_interval")
             oc1, oc2, oc3 = st.columns(3)
             with oc1:
@@ -100,31 +111,33 @@ def _tab_hyper():
     with st.expander("FlashDet schedule, EMA & validation", expanded=False):
         ec1, ec2, ec3, ec4 = st.columns(4)
         with ec1:
-            st.number_input("Seed", 0, 2**31 - 1, int(_value("seed", 0)), key="seed")
-            st.slider("Nominal batch (nbs)", 16, 128, int(_value("nbs", 64)), key="nbs")
+            st.number_input("Seed", 0, 2**31 - 1,
+                            int(_clamp("seed", 0, 2**31 - 1, 0, int)), key="seed")
+            st.slider("Nominal batch (nbs)", 16, 128,
+                      int(_clamp("nbs", 16, 128, 64, int)), key="nbs")
         with ec2:
             st.slider("EMA decay", 0.9900, 0.9999,
-                      float(_value("ema_decay", 0.9998)),
+                      _clamp("ema_decay", 0.9900, 0.9999, 0.9998),
                       step=0.0001, format="%.4f", key="ema_decay")
             st.number_input("EMA warmup", 0, 20000,
-                            int(_value("ema_warmup", 2000)), step=100,
+                            int(_clamp("ema_warmup", 0, 20000, 2000, int)), step=100,
                             key="ema_warmup")
         with ec3:
             st.slider("Warmup momentum", 0.5, 1.0,
-                      float(_value("warmup_momentum", 0.8)),
+                      _clamp("warmup_momentum", 0.5, 1.0, 0.8),
                       step=0.01, key="warmup_momentum")
             st.slider("Base momentum", 0.80, 0.99,
-                      float(_value("base_momentum", 0.937)),
+                      _clamp("base_momentum", 0.80, 0.99, 0.937),
                       step=0.001, format="%.3f", key="base_momentum")
         with ec4:
             st.slider("Val confidence", 0.001, 0.5,
-                      float(_value("val_score_thr", 0.01)),
+                      _clamp("val_score_thr", 0.001, 0.5, 0.01),
                       step=0.001, format="%.3f", key="val_score_thr")
             st.number_input("Max detections", 10, 1000,
-                            int(_value("max_det", 300)), step=10,
+                            int(_clamp("max_det", 10, 1000, 300, int)), step=10,
                             key="max_det")
             st.slider("Grad clip norm", 1.0, 50.0,
-                      float(_value("grad_clip_norm", 10.0)),
+                      _clamp("grad_clip_norm", 1.0, 50.0, 10.0),
                       step=0.5, key="grad_clip_norm")
 
 

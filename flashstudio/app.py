@@ -59,7 +59,7 @@ def _ensure_config_in_session(project_id: str):
     extra_keys = (
         "dataset_classes", "dataset_id", "dataset_output_path",
         "train_ann_path", "val_ann_path", "detected_format",
-        "class_file", "resume_path",
+        "class_file", "resume_path", "exported_files",
     )
     config_keys = tuple(dict.fromkeys(CONFIG_KEYS + extra_keys))
 
@@ -69,18 +69,38 @@ def _ensure_config_in_session(project_id: str):
 
     proj_dir = get_project_dir(project_id)
     state_file = os.path.join(proj_dir, "session_state.json")
-    if not os.path.isfile(state_file):
-        return
+    saved = {}
+    if os.path.isfile(state_file):
+        try:
+            with open(state_file, "r") as f:
+                saved = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            saved = {}
 
-    try:
-        with open(state_file, "r") as f:
-            saved = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return
+    # The config mirror holds the freshest values (it is updated on every
+    # Model page render). Prefer it over the file so a widget key that
+    # Streamlit dropped during navigation is not re-seeded with a stale value.
+    mirror = st.session_state.get("_config_mirror") or {}
 
     for key in missing:
-        if key in saved:
+        if key in mirror:
+            st.session_state[key] = mirror[key]
+        elif key in saved:
             st.session_state[key] = saved[key]
+
+    if not saved:
+        return
+
+    # Exported artifacts live on disk; drop registry entries whose files were
+    # deleted or belong to another project/install.
+    exported = st.session_state.get("exported_files")
+    if isinstance(exported, list):
+        st.session_state["exported_files"] = [
+            entry for entry in exported
+            if isinstance(entry, dict)
+            and entry.get("path")
+            and os.path.isfile(str(entry.get("path")))
+        ]
 
     # Drop stale paths that point at a different FlashStudio checkout and no
     # longer exist.  The project index is shared across installs, so old
@@ -157,10 +177,18 @@ def main():
 
     # Project system — check if user has an active project
     active_project = get_active_project()
+    projects = list_projects()
 
-    if active_project is None and not list_projects():
-        # First time user — show project creation
-        _render_first_time_setup()
+    if active_project is None:
+        if not projects:
+            # First time user — show project creation
+            _render_first_time_setup()
+            return
+        # Projects exist but none is active (e.g. index was edited or a
+        # project was removed) — let the user pick one instead of rendering
+        # the workspace without project context.
+        render_project_manager_page()
+        _render_footer()
         return
 
     # Load project state once on initial page load
@@ -176,13 +204,21 @@ def main():
     if active_project:
         _ensure_config_in_session(active_project["id"])
 
-    render_sidebar()
+    # Keep the sidebar/dashboard status current even when the user is not on
+    # the Training page when a background run finishes or fails.
+    try:
+        from flashstudio.pages.training.page import _check_training_process
+
+        _check_training_process()
+    except Exception:
+        pass
 
     if st.session_state.get("show_project_manager"):
-        render_project_manager_page()
+        render_sidebar()
         if st.button("← Back to Workspace", key="back_from_projects"):
             st.session_state["show_project_manager"] = False
             st.rerun()
+        render_project_manager_page()
         _render_footer()
         return
 
@@ -195,6 +231,11 @@ def main():
         st.code(_tb.format_exc())
 
     render_navigation(STEPS, st.session_state["current_step"])
+
+    # Render the sidebar after the page so its status card reflects values
+    # changed on this run (framework, dataset, training state) instead of
+    # showing last run's values for one extra interaction.
+    render_sidebar()
 
     # Auto-save project state on each page render
     if active_project:

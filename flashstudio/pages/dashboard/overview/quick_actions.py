@@ -16,17 +16,22 @@ def render_quick_actions():
     )
     model = bool(get_state("model_framework"))
     train_status = str(st.session_state.get("training_status") or "")
-    trained = train_status in ("Complete", "Running")
+    trained = train_status == "Complete"
     exported = bool(st.session_state.get("exported_files"))
     inferred = bool(
         st.session_state.get("infer_img_results")
         or st.session_state.get("video_results")
     )
 
+    training_detail = (
+        "Training in progress…"
+        if train_status in ("Running", "Paused")
+        else "Launch a run and watch metrics live."
+    )
     steps = [
         ("Load a dataset", "Import a ZIP or point at a COCO folder.", 1, dataset),
         ("Configure the model", f"Active model: {model_display_name()}", 2, model),
-        ("Train the model", "Launch a run and watch metrics live.", 3, trained),
+        ("Train the model", training_detail, 3, trained),
         ("Export for deployment", "ONNX, TorchScript, fusion, or INT8.", 4, exported),
         ("Run inference", "Images, video, or a live stream.", 5, inferred),
     ]
@@ -60,4 +65,8 @@ def render_quick_actions():
                 use_container_width=True,
             ):
                 st.session_state["current_step"] = step
+                if step == 1:
+                    st.session_state["_data_tab_next"] = (
+                        "Preview" if dataset else "Upload"
+                    )
                 st.rerun()

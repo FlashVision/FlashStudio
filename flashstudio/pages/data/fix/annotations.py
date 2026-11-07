@@ -210,17 +210,35 @@ def fix_coco(ann_path: str, images_dir: str | None = None,
 
 
 def _yolo_label_dir(images_dir: str, labels_dir: str | None = None) -> str:
-    if labels_dir:
+    """Find the YOLO labels directory that belongs to *images_dir*."""
+    if labels_dir and os.path.isdir(labels_dir):
         return labels_dir
-    candidate = images_dir.replace("/images/", "/labels/").replace("\\images\\", "\\labels\\")
-    if os.path.isdir(candidate):
-        return candidate
-    parent = os.path.dirname(os.path.normpath(images_dir))
-    for name in ("labels", "labels/train", "labels/valid"):
-        p = os.path.join(parent, name)
-        if os.path.isdir(p):
-            return p
-    return images_dir
+    if not images_dir or not os.path.isdir(images_dir):
+        return ""
+
+    images_dir = os.path.abspath(images_dir)
+    split_dir = images_dir
+    if os.path.basename(images_dir).lower() in ("images", "imgs"):
+        split_dir = os.path.dirname(images_dir)
+    root = os.path.dirname(split_dir)
+    split_name = os.path.basename(split_dir)
+
+    candidates = [
+        os.path.join(split_dir, "labels"),
+        os.path.join(root, "labels", split_name),
+        os.path.join(root, "labels", "valid" if split_name in ("val", "valid") else split_name),
+        os.path.join(root, "labels"),
+        os.path.join(os.path.dirname(root), "labels", split_name),
+    ]
+    for candidate in candidates:
+        if not os.path.isdir(candidate):
+            continue
+        try:
+            if any(name.endswith(".txt") for name in os.listdir(candidate)):
+                return candidate
+        except OSError:
+            continue
+    return ""
 
 
 def scan_yolo(labels_dir: str, images_dir: str | None = None, num_classes: int | None = None) -> dict:
@@ -239,7 +257,7 @@ def scan_yolo(labels_dir: str, images_dir: str | None = None, num_classes: int |
     if images_dir and os.path.isdir(images_dir):
         image_names = {
             os.path.splitext(f)[0] for f in os.listdir(images_dir)
-            if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp"))
+            if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"))
         }
     if not os.path.isdir(labels_dir):
         return report

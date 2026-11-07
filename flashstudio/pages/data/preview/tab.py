@@ -4,25 +4,39 @@ import os
 import json
 import streamlit as st
 
-from flashstudio.constants import IMG_EXTENSIONS, BBOX_COLORS_RGB, MAX_PREVIEW_COLS
+from flashstudio.constants import IMG_EXTENSIONS_ALL, BBOX_COLORS_RGB, MAX_PREVIEW_COLS
+from flashstudio.pages.data._common import _load_data_prompt
 
 
 def _render_preview():
     train_path = st.session_state.get("train_img_path", "")
     val_path = st.session_state.get("val_img_path", "")
-    if not train_path or not os.path.isdir(train_path):
-        st.info("No dataset loaded yet.")
+    splits = []
+    if train_path and os.path.isdir(train_path):
+        splits.append("Train")
+    if val_path and os.path.isdir(val_path):
+        splits.append("Validation")
+    if not splits:
+        _load_data_prompt("No dataset loaded yet.", "preview_load_data")
         return
+
+    if st.session_state.get("prev_split") not in splits:
+        st.session_state["prev_split"] = splits[0]
 
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
-        split = st.radio("Split", ["Train", "Val"], horizontal=True, key="prev_split")
+        split = st.radio("Split", splits, horizontal=True, key="prev_split")
     preview_path = train_path if split == "Train" else val_path
     if not preview_path or not os.path.isdir(preview_path):
         st.warning("Path not set.")
         return
 
-    all_imgs = sorted([f for f in os.listdir(preview_path) if f.lower().endswith(IMG_EXTENSIONS)])
+    all_imgs = sorted(
+        os.path.relpath(os.path.join(root, name), preview_path)
+        for root, _dirs, files in os.walk(preview_path)
+        for name in files
+        if name.lower().endswith(IMG_EXTENSIONS_ALL)
+    )
     if not all_imgs:
         st.warning("No images.")
         return
@@ -57,10 +71,19 @@ def _render_preview():
             st.session_state["prev_start"] = min(start + n, max(len(all_imgs) - n, 0))
             st.rerun()
 
-    # Load COCO annotations if available
-    ann_file = os.path.join(preview_path, "_annotations.coco.json")
+    # Load COCO annotations if available.  Search the split directory, a
+    # parent folder, and an annotations/ sibling so uploads with the usual
+    # dataset/train/images + dataset/annotations layout still preview boxes.
+    from flashstudio.utils.dataset_paths import resolve_annotation_file
+
+    split_name = "val" if split == "Validation" else "train"
+    ann_file = resolve_annotation_file(
+        preview_path,
+        split=split_name,
+        hint=st.session_state.get(f"{split_name}_ann_path", ""),
+    )
     ann_data = None
-    if os.path.isfile(ann_file):
+    if ann_file and os.path.isfile(ann_file):
         try:
             with open(ann_file) as f:
                 ann_data = json.load(f)
@@ -72,18 +95,29 @@ def _render_preview():
         for c in ann_data.get("categories", []):
             cat_map[c["id"]] = c["name"]
         for im in ann_data.get("images", []):
-            img_id_map[im["file_name"]] = im["id"]
+            file_name = im.get("file_name", "")
+            img_id_map[file_name] = im["id"]
+            # Some COCO exports store subdirectories in file_name while the
+            # preview lists the image directory recursively/flat.
+            img_id_map.setdefault(os.path.basename(file_name), im["id"])
         for a in ann_data.get("annotations", []):
             ann_by_img.setdefault(a["image_id"], []).append(a)
 
-    # YOLO label directory — check sibling 'labels' folder or session state
-    yolo_label_dir = st.session_state.get(f"{split.lower()}_label_path", "")
-    if not yolo_label_dir or not os.path.isdir(yolo_label_dir):
-        candidate = preview_path.replace("/images/", "/labels/").replace("\\images\\", "\\labels\\")
-        if os.path.isdir(candidate):
-            yolo_label_dir = candidate
-        else:
-            yolo_label_dir = ""
+    # YOLO label directory — check session state and the sibling labels folder
+    from flashstudio.pages.data.fix.annotations import _yolo_label_dir
+
+    yolo_label_dir = _yolo_label_dir(
+        preview_path,
+        st.session_state.get(f"{split_name}_label_path", ""),
+    )
+    try:
+        has_labels = bool(yolo_label_dir) and any(
+            name.endswith(".txt") for name in os.listdir(yolo_label_dir)
+        )
+    except OSError:
+        has_labels = False
+    if not has_labels:
+        yolo_label_dir = ""
 
     from PIL import Image, ImageDraw
     selected = all_imgs[start:start + n]
@@ -112,9 +146,14 @@ def _render_preview():
                                     draw.rectangle([x, y, x+w, y+h], outline=color, width=2)
                                     total_boxes += 1
                                     drawn = True
-                        if not drawn and yolo_label_dir:
+                        if not drawn and yolo_label_dir and not ann_data:
                             lbl_name = os.path.splitext(img_name)[0] + ".txt"
                             lbl_path = os.path.join(yolo_label_dir, lbl_name)
+                            if not os.path.isfile(lbl_path):
+                                lbl_path = os.path.join(
+                                    yolo_label_dir,
+                                    os.path.splitext(os.path.basename(img_name))[0] + ".txt",
+                                )
                             if os.path.isfile(lbl_path):
                                 with open(lbl_path) as lf:
                                     for line in lf:

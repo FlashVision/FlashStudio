@@ -77,6 +77,9 @@ def _render_monitor_tab():
 
     if not all_folders:
         st.info("No runs found. Start training first.")
+        if st.button("Go to Launch", key="monitor_go_launch"):
+            st.session_state["_training_tab_next"] = "Launch"
+            st.rerun()
         _render_run_dashboard(None)
         return
 

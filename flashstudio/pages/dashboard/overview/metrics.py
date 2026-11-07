@@ -21,10 +21,12 @@ def render_metrics(gpu, stats):
         train_path = st.session_state.get("train_img_path", "")
         img_count = 0
         if train_path and os.path.isdir(train_path):
-            img_count = len([
-                f for f in os.listdir(train_path)
-                if f.lower().endswith(IMG_EXTENSIONS)
-            ])
+            img_count = sum(
+                1
+                for _root, _dirs, files in os.walk(train_path)
+                for name in files
+                if name.lower().endswith(IMG_EXTENSIONS)
+            )
         st.metric("Dataset", ds_name, delta=f"{img_count} training images", delta_color="off")
     with m3:
         from flashstudio.utils import get_state

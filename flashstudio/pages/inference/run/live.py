@@ -45,6 +45,11 @@ def _render_live_tab():
 
         c1, c2, c3 = st.columns([3, 1, 1])
         with c1:
+            if (
+                "live_source" not in st.session_state
+                and st.session_state.get("infer_stream_url")
+            ):
+                st.session_state["live_source"] = st.session_state["infer_stream_url"]
             source = st.text_input(
                 "Stream source",
                 placeholder="rtsp://user:pass@host:554/stream  or  0 for webcam",
@@ -199,7 +204,9 @@ def _render_live_tab():
                 count = len(results) if isinstance(results, (list, tuple)) else 0
             elif adapter is not None:
                 results = adapter(frame)
-                frame_out = _draw_boxes_cv2(frame, results)
+                frame_out = _draw_boxes_cv2(
+                    frame, results, getattr(adapter, "class_names", None)
+                )
                 count = len(results)
             elif st.session_state.get("infer_demo_mode"):
                 from PIL import Image
@@ -317,7 +324,9 @@ def _render_multi_camera():
                     if adapter is not None:
                         raw = adapter(frame)
                         dets += len(raw)
-                        frame = _draw_boxes_cv2(frame, raw)
+                        frame = _draw_boxes_cv2(
+                            frame, raw, getattr(adapter, "class_names", None)
+                        )
                     elif st.session_state.get("infer_demo_mode"):
                         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                         pil = Image.fromarray(rgb)

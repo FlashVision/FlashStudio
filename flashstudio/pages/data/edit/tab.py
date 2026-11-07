@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw
 
 from flashstudio.pages.data.fix.annotations import load_coco
 from flashstudio.pages.data.fix.tab import _coco_path
+from flashstudio.pages.data._common import _load_data_prompt
 from flashstudio.constants import BBOX_COLORS_HEX
 
 
@@ -95,10 +96,13 @@ def _render_edit():
     img_key = "train_img_path" if split == "Train" else "val_img_path"
     img_dir = st.session_state.get(img_key, "")
     if not img_dir or not os.path.isdir(img_dir):
-        st.info(f"No {split.lower()} images directory is configured. Load a dataset first.")
+        _load_data_prompt(
+            f"No {split.lower()} images directory is configured. Load a dataset first.",
+            "edit_load_data",
+        )
         return
 
-    ann_path = _coco_path(img_dir)
+    ann_path = _coco_path(img_dir, "train" if split == "Train" else "val")
     if not ann_path:
         st.info("No COCO annotation file found for this split.")
         return
@@ -168,6 +172,7 @@ def _render_edit():
             try:
                 added = _save_rows(ann_path, data, image_rec["id"], edited, classes)
                 st.success(f"Saved {added} box(es) for `{selected_name}`.")
+                st.session_state["_data_tab_next"] = "Preview"
                 st.rerun()
             except Exception as exc:
                 st.error(f"Save failed: {exc}")
@@ -181,6 +186,7 @@ def _render_edit():
             with open(ann_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             st.success(f"Removed all boxes from `{selected_name}`.")
+            st.session_state["_data_tab_next"] = "Preview"
             st.rerun()
     with b3:
         st.caption("Add a row, choose a class, enter x1/y1/x2/y2, then save.")

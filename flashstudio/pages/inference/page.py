@@ -8,9 +8,35 @@ from flashstudio.pages.inference._common import (
 from flashstudio.pages.inference.run.detection import _resolve_weights_path
 
 
+def _infer_tabs(labels):
+    """Workflow tabs with optional programmatic advance to the next step."""
+    import inspect
+
+    next_tab = st.session_state.pop("_infer_tab_next", None)
+    if next_tab == "Live":
+        st.session_state["_infer_run_mode"] = "Live"
+        next_tab = "Run"
+    params = inspect.signature(st.tabs).parameters
+    if "default" not in params or "on_change" not in params:
+        return st.tabs(labels)
+    if next_tab in labels:
+        st.session_state["_infer_tab"] = next_tab
+    selected = st.session_state.get("_infer_tab")
+    if selected == "Live":
+        selected = "Run"
+    if selected not in labels:
+        selected = labels[0]
+    st.session_state["_infer_tab"] = selected
+    return st.tabs(
+        labels, key="_infer_tab", default=selected, on_change="rerun"
+    )
+
+
 def render_inference_page():
     from flashstudio.utils import get_state, show_flashes
-    from flashstudio.pages.inference.model.tab import _tab_model
+    from flashstudio.pages.inference.model.tab import (
+        _apply_weight_selection, _tab_model,
+    )
     from flashstudio.pages.inference.data.tab import _tab_data
     from flashstudio.pages.inference.solution.tab import _tab_solution
     from flashstudio.pages.inference.run.tab import _tab_run
@@ -40,6 +66,7 @@ def render_inference_page():
             st.session_state.pop(key, None)
         st.session_state["infer_framework"] = "Auto"
         st.session_state["weight_source"] = "Training output"
+        st.session_state["_infer_tab_next"] = "Model"
     st.session_state["_infer_family_last"] = family
     st.caption(INFER_NOTES.get(family, ""))
     from flashstudio.components.dependencies import render_dependency_hint
@@ -49,8 +76,19 @@ def render_inference_page():
         key_suffix=f"infer_{family.lower()}",
     )
 
+    # A download button from the Model tab stores the choice and asks for the
+    # Data tab next; apply it before readiness badges are computed because the
+    # Model tab itself may not run when another tab is selected.
+    _apply_weight_selection()
+
     has_model = bool(_resolve_weights_path())
-    has_data = bool(st.session_state.get("infer_images") or st.session_state.get("infer_video") or st.session_state.get("infer_stream_url"))
+    input_type = st.session_state.get("infer_input_type", "Images")
+    if input_type == "Images":
+        has_data = bool(st.session_state.get("infer_images"))
+    elif input_type == "Video":
+        has_data = bool(st.session_state.get("infer_video"))
+    else:
+        has_data = bool(st.session_state.get("infer_stream_url"))
     sol = SOLUTIONS.get(st.session_state.get("selected_solution", "None (Detection Only)"), {})
     has_zone = not sol.get("needs_zone") or bool(st.session_state.get("zone_line_points") or st.session_state.get("zone_polygons"))
 
@@ -67,8 +105,8 @@ def render_inference_page():
         unsafe_allow_html=True,
     )
 
-    tab_model, tab_data, tab_solution, tab_run, tab_live = st.tabs(
-        ["Model", "Data", "Solution", "Run", "Live"]
+    tab_model, tab_data, tab_solution, tab_run = _infer_tabs(
+        ["Model", "Data", "Solution", "Run"]
     )
     with tab_model:
         _tab_model(family)
@@ -77,6 +115,26 @@ def render_inference_page():
     with tab_solution:
         _tab_solution()
     with tab_run:
-        _tab_run()
-    with tab_live:
-        _render_live_tab()
+        default_mode = (
+            "Live" if st.session_state.get("infer_input_type") == "RTSP" else "Batch"
+        )
+        st.session_state.setdefault("_infer_run_mode", default_mode)
+        st.radio(
+            "Run mode",
+            ["Batch", "Live"],
+            horizontal=True,
+            key="_infer_run_mode",
+            help=(
+                "Batch processes selected images or a video file. "
+                "Live reads a webcam or RTSP stream continuously."
+            ),
+        )
+        if st.session_state.get("_infer_run_mode") == "Live":
+            if st.session_state.get("infer_input_type") != "RTSP":
+                st.caption(
+                    "Live streams from its own source below; the Data tab input "
+                    "is used by Batch mode."
+                )
+            _render_live_tab()
+        else:
+            _tab_run()

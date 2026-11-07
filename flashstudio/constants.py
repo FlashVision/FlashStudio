@@ -47,7 +47,7 @@ PROJECT_ROOT = _PROJECT_ROOT
 
 DEFAULT_SAVE_DIR = os.path.join(_PROJECT_ROOT, "flashstudio_workspaces")
 DEFAULT_DATA_DIR = os.path.join(_PROJECT_ROOT, "data")
-NETWORK_CHECK_URL = "http://images.cocodataset.org"
+NETWORK_CHECK_URL = "https://s3.amazonaws.com/images.cocodataset.org"
 NETWORK_CHECK_TIMEOUT = 5
 
 # ════════════════════════════════════════

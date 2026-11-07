@@ -125,7 +125,7 @@ def _render_progress(current: int):
     st.markdown(
         f'<div class="fs-side-progress">'
         f'<div class="fs-side-bar"><span style="width:{pct}%"></span></div>'
-        f'<div class="fs-side-step">{current + 1}/{total}</div>'
+        f'<div class="fs-side-step">Step {current + 1} of {total}</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -145,6 +145,7 @@ def _render_status():
     status_color = {
         "Complete": "#059669",
         "Running": "#D97706",
+        "Paused": "#D97706",
         "Failed": "#DC2626",
     }.get(str(st.session_state.get("training_status") or ""), "#9CA3AF")
 
@@ -158,6 +159,22 @@ def _render_status():
         f'</div>',
         unsafe_allow_html=True,
     )
+
+    download = st.session_state.get("_dataset_download")
+    if download:
+        pct = download.get("percent")
+        pct_text = f"{float(pct) * 100:.0f}%" if isinstance(pct, (int, float)) else "working"
+        st.caption(
+            f"Downloading **{html.escape(str(download.get('dataset_id') or download.get('name') or 'dataset'))}** · {pct_text}"
+        )
+        if st.button("Cancel download", key="sb_cancel_download", use_container_width=True):
+            try:
+                from flashstudio.pages.data.helpers import _cancel_dataset_download
+
+                _cancel_dataset_download()
+            except Exception as exc:
+                st.caption(f"Cancel failed: {exc}")
+            st.rerun()
 
 
 def render_sidebar():
