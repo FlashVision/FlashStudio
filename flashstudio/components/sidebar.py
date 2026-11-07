@@ -1,0 +1,174 @@
+"""FlashStudio sidebar — friendly workspace navigation and status."""
+
+import base64
+import html
+import os
+
+import streamlit as st
+
+from flashstudio.components.project_manager import (
+    get_active_project, save_project_state,
+)
+from flashstudio.constants import DATASET_NAME_TRUNCATE, GPU_NAME_TRUNCATE
+from flashstudio.utils.device import get_gpu_info
+
+NAV_GROUPS = [
+    ("Workspace", [("Dashboard", "🏠")]),
+    ("Build", [("Data", "🗂"), ("Model", "🧩"), ("Training", "🎯")]),
+    ("Ship", [("Export", "📦"), ("Inference", "🔎")]),
+]
+
+STEP_ORDER = ["Dashboard", "Data", "Model", "Training", "Export", "Inference"]
+
+# Backwards-compatible flat navigation list used by older tests/integrations.
+NAV = [
+    ("🏠", "Dashboard"),
+    ("🗂", "Data"),
+    ("🧩", "Model"),
+    ("🎯", "Training"),
+    ("📦", "Export"),
+    ("🔎", "Inference"),
+]
+
+
+def _get_logo_b64():
+    logo_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "..", "assets", "logo.png",
+    )
+    if not os.path.isfile(logo_path):
+        logo_path = os.path.join(os.getcwd(), "assets", "logo.png")
+    if os.path.isfile(logo_path):
+        with open(logo_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    return None
+
+
+def _model_label() -> str:
+    from flashstudio.utils import get_state
+
+    framework = str(get_state("model_framework") or "FlashDet")
+    if framework == "Ultralytics":
+        series = str(get_state("yolo_series") or "YOLOv8")
+        size = str(get_state("yolo_size") or "n").upper()
+        return f"{series}-{size}"
+    if framework == "YOLOX":
+        return "YOLOX"
+    arch = str(get_state("model_arch") or "FlashDet-Pico")
+    return arch.replace("FlashDet-", "")
+
+
+def _render_brand():
+    logo_b64 = _get_logo_b64()
+    if logo_b64:
+        mark = (
+            f'<img src="data:image/png;base64,{logo_b64}" '
+            f'style="width:42px;height:42px;border-radius:12px;object-fit:cover;">'
+        )
+    else:
+        mark = '<div class="fs-brand-mark">FS</div>'
+    st.markdown(
+        f'<div class="fs-brand">{mark}'
+        f'<div><div class="fs-brand-name">FlashStudio</div>'
+        f'<div class="fs-brand-tag">Detection workspace</div></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_project(project):
+    if not project:
+        st.markdown(
+            '<div class="fs-project-card">'
+            '<div class="fs-project-kicker">No project</div>'
+            '<div class="fs-project-name">Create a project</div>'
+            '<div class="fs-project-meta">Datasets, runs, and exports stay together.</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        name = html.escape(str(project.get("name", "Untitled")))
+        desc = html.escape(str(project.get("description", ""))[:54])
+        st.markdown(
+            f'<div class="fs-project-card">'
+            f'<div class="fs-project-kicker">Project</div>'
+            f'<div class="fs-project-name">{name}</div>'
+            f'<div class="fs-project-meta">{desc or "Ready to build."}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    if st.button("Manage projects", key="sb_project", use_container_width=True):
+        save_project_state()
+        st.session_state["show_project_manager"] = True
+        st.rerun()
+
+
+def _render_nav(current: int):
+    for group, items in NAV_GROUPS:
+        st.markdown(f'<div class="fs-nav-label">{group}</div>', unsafe_allow_html=True)
+        for label, icon in items:
+            index = STEP_ORDER.index(label)
+            if st.button(
+                f"{icon}  {label}",
+                key=f"sb_{index}",
+                type="primary" if index == current else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state["current_step"] = index
+                st.session_state["show_project_manager"] = False
+                st.rerun()
+
+
+def _render_progress(current: int):
+    total = len(STEP_ORDER)
+    pct = int(round(((current + 1) / total) * 100))
+    st.markdown(
+        f'<div class="fs-side-progress">'
+        f'<div class="fs-side-bar"><span style="width:{pct}%"></span></div>'
+        f'<div class="fs-side-step">{current + 1}/{total}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_status():
+    gpu = get_gpu_info()
+    device = (
+        html.escape(str(gpu["name"])[:GPU_NAME_TRUNCATE])
+        if gpu.get("available") else "CPU"
+    )
+    dataset = html.escape(
+        str(st.session_state.get("dataset_name") or "Not loaded")[:DATASET_NAME_TRUNCATE]
+    )
+    model = html.escape(_model_label())
+    status = html.escape(str(st.session_state.get("training_status") or "Idle")[:14])
+    status_color = {
+        "Complete": "#059669",
+        "Running": "#D97706",
+        "Failed": "#DC2626",
+    }.get(str(st.session_state.get("training_status") or ""), "#9CA3AF")
+
+    st.markdown(
+        f'<div class="fs-status-card">'
+        f'<div class="fs-status-row"><span>Device</span><span>{device}</span></div>'
+        f'<div class="fs-status-row"><span>Dataset</span><span>{dataset}</span></div>'
+        f'<div class="fs-status-row"><span>Model</span><span>{model}</span></div>'
+        f'<div class="fs-status-row"><span>Training</span>'
+        f'<span><span class="fs-dot" style="background:{status_color};"></span>{status}</span></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar():
+    with st.sidebar:
+        _render_brand()
+        project = get_active_project()
+        _render_project(project)
+
+        current = int(st.session_state.get("current_step", 0) or 0)
+        _render_nav(current)
+        _render_progress(current)
+
+        st.divider()
+        _render_status()
