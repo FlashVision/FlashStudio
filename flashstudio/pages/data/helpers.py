@@ -14,7 +14,7 @@ from flashstudio.constants import IMG_EXTENSIONS, INFER_NUM_CLASSES
 from flashstudio.pages.data._common import (
     _HAS_FLASHDET, _FLASHDET_INSTALL_MSG,
     _auto_detect_classes, _dataset_already_downloaded,
-    _get_data_root, _is_archive_url,
+    _get_data_root, _is_archive_url, _resolve_download_root,
 )
 from flashstudio.utils.dataset_paths import (
     ensure_coco_annotation, find_validation_dir, has_images,
@@ -148,7 +148,7 @@ def _extract_upload(uploaded_file, split):
         if _HAS_FLASHDET:
             fmt = detect_dataset_format(root)
         if fmt == "unknown" and _find_labels(root):
-            # FlashDet does not recognise images/train2017 + labels/train2017
+            # FlashDet does not recognize images/train2017 + labels/train2017
             # (common in COCO128 exports), but the dataset is still YOLO.
             fmt = "txt"
         st.session_state["detected_format"] = fmt
@@ -473,7 +473,7 @@ def _convert_to_coco(src, split, src_fmt):
                 if src_fmt != "txt":
                     raise
                 # FlashDet only detects train/images-style YOLO layouts.
-                # Normalise other layouts (images/train2017, flat images, ...)
+                # Normalize other layouts (images/train2017, flat images, ...)
                 # through a canonical temporary folder.
                 shutil.rmtree(out, ignore_errors=True)
                 stats = _convert_yolo_layout(src, out, cls_names)
@@ -966,6 +966,12 @@ def _start_dataset_download(mode, output_dir, **extra):
     job_root = os.path.abspath(os.path.join(_get_data_root(), ".downloads"))
     os.makedirs(job_root, exist_ok=True)
     output_dir = os.path.abspath(output_dir)
+    if os.path.exists(output_dir) and not os.path.isdir(output_dir):
+        flash(
+            f"Download folder is a file, not a directory: {output_dir}",
+            "error",
+        )
+        return None
     token = uuid.uuid4().hex
     status_path = os.path.join(job_root, f"{token}.status.json")
     cancel_path = os.path.join(job_root, f"{token}.cancel")
@@ -1046,9 +1052,7 @@ def _start_flashdet_download(dataset_id, display_name=None, classes=None):
     if not _HAS_FLASHDET:
         st.error(_FLASHDET_INSTALL_MSG)
         return
-    out = st.session_state.get("download_output_dir") or os.path.join(
-        _get_data_root(), dataset_id
-    )
+    out = os.path.join(_resolve_download_root(), dataset_id)
     existing = _dataset_already_downloaded(dataset_id, out)
     if existing:
         if _load_native_downloaded(
@@ -1081,7 +1085,7 @@ def _start_external_download(ds):
         st.info(f"Manual download: [{url}]({url})")
         return
     out = os.path.join(
-        _get_data_root(),
+        _resolve_download_root(),
         name.lower().replace(" ", "_").replace("(", "").replace(")", ""),
     )
     if os.path.isdir(out) and os.listdir(out):
@@ -1165,7 +1169,7 @@ def _cancel_dataset_download():
     _cleanup_download_partials(state)
     st.session_state.pop("_dataset_download", None)
     st.session_state["_data_tab_next"] = "Download"
-    flash("Dataset download cancelled", "info")
+    flash("Dataset download canceled", "info")
 
 
 def _poll_dataset_download():
@@ -1221,7 +1225,7 @@ def _poll_dataset_download():
         _reap_download_process(state)
         st.session_state.pop("_dataset_download", None)
         st.session_state["_data_tab_next"] = "Download"
-        flash("Dataset download cancelled", "info")
+        flash("Dataset download canceled", "info")
         st.rerun()
         return state
 
@@ -1301,6 +1305,9 @@ def _render_dataset_download_status():
                 st.caption(message)
         else:
             st.info(message)
+        output_dir = state.get("output_dir")
+        if output_dir:
+            st.caption(f"Saving to `{output_dir}`")
         if st.button(
             "Cancel download", key="cancel_dataset_download",
             use_container_width=True,
@@ -1313,7 +1320,7 @@ def _run_flashdet_download(dataset_id):
     if not _HAS_FLASHDET:
         st.error(_FLASHDET_INSTALL_MSG)
         return
-    out = st.session_state.get("download_output_dir") or os.path.join(_get_data_root(), dataset_id)
+    out = os.path.join(_resolve_download_root(), dataset_id)
     existing = _dataset_already_downloaded(dataset_id, out)
     if existing:
         _clear_loaded_paths()
@@ -1467,7 +1474,7 @@ def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
     # non-standard split names.  Detect it by the COCO JSON rather than by
     # hard-coded directory names.
     if _HAS_FLASHDET:
-        # FlashDet's detect_dataset_format only recognises
+        # FlashDet's detect_dataset_format only recognizes
         # ``_annotations.coco.json``; official COCO uses
         # ``annotations/instances_train2017.json``, so resolve the annotation
         # directly instead of relying on hard-coded directory names.
@@ -1496,7 +1503,7 @@ def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
                 )
             return images_dir
 
-    # YOLO-style archive: normalise into train/valid (preserving an existing
+    # YOLO-style archive: normalize into train/valid (preserving an existing
     # validation split), then convert to COCO.
     if labels_dir and _HAS_FLASHDET:
         import shutil

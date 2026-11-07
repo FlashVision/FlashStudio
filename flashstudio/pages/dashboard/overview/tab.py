@@ -25,7 +25,6 @@ def render_overview(project, stats):
     with left:
         with st.container(border=True):
             st.markdown("#### What to do next")
-            st.caption("Follow the workflow from data to deployment.")
             render_quick_actions()
     with right:
         with st.container(border=True):

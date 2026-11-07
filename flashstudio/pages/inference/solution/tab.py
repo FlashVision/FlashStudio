@@ -71,7 +71,7 @@ def _zone_draw_ui(sol):
             if frame_img is None:
                 st.caption("No input image yet — the canvas is blank. Add an image or video in the Data tab.")
             else:
-                st.caption("Draw directly on the first frame. Use the toolbar to undo, or Clear zone below.")
+                st.caption("Draw on the first frame; use Clear zone to reset.")
 
             if _HAS_ZONE_DRAWER:
                 result = zone_drawer(image=frame_img, mode=draw_mode, points=existing_points,
@@ -100,12 +100,6 @@ def _zone_draw_ui(sol):
                 st.caption(f"{shape} · {len(polygons)} zone(s) · {len(polygons[-1])} points")
             else:
                 st.caption("No zone set yet.")
-
-            st.markdown("#### Tips")
-            st.caption("• **Polygon** for regions, parking, and security zones.")
-            st.caption("• **Rectangle** for quick bounding areas.")
-            st.caption("• **Line** for counters and speed estimation.")
-            st.caption("Coordinates are scaled to the source frame automatically.")
 
             if frame_img is not None and (line or polygons):
                 preview = frame_img.copy().convert("RGB")

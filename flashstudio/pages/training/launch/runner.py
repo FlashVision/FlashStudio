@@ -94,9 +94,10 @@ def _start_training():
         st.session_state["training_active"] = False
         st.session_state["training_status"] = "No validation set"
         st.session_state["training_error"] = (
-            "A validation set is required. Point Data → Val → Images dir at a "
-            "separate split with _annotations.coco.json. Training on the train "
-            "split would produce misleading metrics."
+            "A validation set is required. Point Data → Load data → Upload → "
+            "Validation → Images folder at a separate split with "
+            "_annotations.coco.json. Training on the train split would produce "
+            "misleading metrics."
         )
         return
 
@@ -350,7 +351,7 @@ def _sanitize_run_name(run_name: str) -> str:
 
 
 def _build_training_params(save_dir: str) -> dict:
-    """Collect the Model page configuration into a JSON-serialisable dict."""
+    """Collect the Model page configuration into a JSON-serializable dict."""
     from flashstudio.utils import get_class_names_list
 
     size_map = {name: info["size"] for name, info in FLASHDET_MODELS.items()}
@@ -575,10 +576,17 @@ def _run_flashdet_training():
     st.session_state["training_backend"] = "flashdet.Trainer"
     st.session_state["training_manifest"] = manifest_path
 
-    # Give the child a moment to fail fast (import errors, bad manifest, ...).
-    time.sleep(2)
+    from flashstudio.pages.training.processes import write_pid_file
+    write_pid_file(save_dir, process.pid)
+
+    # Check for an immediate crash, but do not block the UI: a long sleep here
+    # leaves the previous (dimmed) page visible until the rerun completes.
+    # Later failures are picked up by _check_training_process on the next run.
+    time.sleep(0.25)
     exit_code = process.poll()
     if exit_code is not None:
+        from flashstudio.pages.training.processes import clear_pid_file
+        clear_pid_file(save_dir)
         fh = st.session_state.pop("_log_file_handle", None)
         if fh and not fh.closed:
             try:

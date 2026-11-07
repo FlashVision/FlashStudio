@@ -12,17 +12,36 @@ try:
     import streamlit.elements.image as _img_mod
     if not hasattr(_img_mod, "image_to_url"):
         def _image_to_url(image, width, clamp, channels, output_format, image_id, allow_emoji=True):
-            """Compatibility shim for removed image_to_url."""
+            """Compatibility shim for removed image_to_url.
+
+            The drawable-canvas frontend prepends the Streamlit origin to the
+            value returned here, so it must be a served path like
+            ``/media/<id>`` — a ``data:`` URL would become unusable.
+            """
             import base64
-            buf = io.BytesIO()
-            if isinstance(image, Image.Image):
-                image.save(buf, format="PNG")
-            elif isinstance(image, np.ndarray):
-                Image.fromarray(image).save(buf, format="PNG")
-            else:
-                return ""
-            b64 = base64.b64encode(buf.getvalue()).decode()
-            return f"data:image/png;base64,{b64}"
+
+            try:
+                from streamlit.elements.lib.image_utils import (
+                    image_to_url as _modern_image_to_url,
+                )
+                from streamlit.elements.lib.layout_utils import LayoutConfig
+
+                fmt = str(output_format or "png").lower()
+                return _modern_image_to_url(
+                    image, LayoutConfig(width=width), clamp, channels,
+                    fmt, image_id,
+                )
+            except Exception:
+                buf = io.BytesIO()
+                if isinstance(image, Image.Image):
+                    image.save(buf, format="PNG")
+                elif isinstance(image, np.ndarray):
+                    Image.fromarray(image).save(buf, format="PNG")
+                else:
+                    return ""
+                b64 = base64.b64encode(buf.getvalue()).decode()
+                return f"data:image/png;base64,{b64}"
+
         _img_mod.image_to_url = _image_to_url
 
     from streamlit_drawable_canvas import st_canvas

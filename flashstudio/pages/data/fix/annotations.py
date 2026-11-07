@@ -107,7 +107,7 @@ def fix_coco(ann_path: str, images_dir: str | None = None,
 
     image_by_id = {img.get("id"): img for img in images}
 
-    # Normalise categories to contiguous 1..N ids while preserving names.
+    # Normalize categories to contiguous 1..N ids while preserving names.
     if not categories:
         names = list(class_names or [])
         categories = [{"id": i + 1, "name": n, "supercategory": "object"} for i, n in enumerate(names)]

@@ -26,7 +26,7 @@ def render_project_banner(project):
                 f'<div style="font-size:1.55rem;font-weight:800;letter-spacing:-.03em;'
                 f'color:var(--fs-text);margin:.12rem 0;">{name}</div>'
                 f'{desc_html}'
-                f'<div style="font-size:.73rem;color:var(--fs-faint);margin-top:.4rem;">'
+                f'<div style="font-size: var(--fs-text-sm);color:var(--fs-faint);margin-top:.4rem;">'
                 f'Created {created} · Updated {modified}</div>'
                 f'</div>',
                 unsafe_allow_html=True,

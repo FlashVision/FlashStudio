@@ -54,10 +54,6 @@ def _has_weights(family: str) -> bool:
 
 def _render_weight_downloader(family: str):
     with st.expander(f"Download {family} weights", expanded=not _has_weights(family)):
-        st.caption(
-            "Checkpoints are cached in `~/.flashstudio/weights` and shared with "
-            "training and export."
-        )
         if family == "FlashDet":
             entries = flashdet_weights()
             if not entries:
@@ -179,7 +175,6 @@ def _tab_model(family: str = "FlashDet"):
     with col1:
         with st.container(border=True):
             st.markdown("#### Parameters")
-            st.caption("Architecture and class count are read from the selected checkpoint.")
             pc1, pc2 = st.columns(2)
             with pc1:
                 st.slider("Confidence", 0.0, 1.0, INFER_CONF_THRESHOLD, 0.05,
@@ -238,8 +233,6 @@ def _tab_model(family: str = "FlashDet"):
                 )
                 if up:
                     st.success(f"{up.name} ({up.size / 1e6:.1f}MB)")
-                elif st.session_state.get("infer_weights_file"):
-                    st.caption("Uploaded file is still available in this session.")
             elif ws == "Path":
                 placeholder = (
                     "/path/best.pt" if family == "Ultralytics" else "/path/best.pth"
@@ -258,7 +251,6 @@ def _tab_model(family: str = "FlashDet"):
                 if best_path and os.path.isfile(best_path):
                     sz = os.path.getsize(best_path) / (1024 * 1024)
                     st.success(f"`{os.path.basename(best_path)}` ({sz:.1f}MB)")
-                    st.caption(f"`{best_path}`")
                 else:
                     st.caption(f"No {family} training output found in `{sd}`")
 

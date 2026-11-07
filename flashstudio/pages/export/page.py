@@ -4,10 +4,6 @@ import os
 
 import streamlit as st
 
-from flashstudio.constants import (
-    CKPT_BEST_INFERENCE, CKPT_BEST, CKPT_LAST_INFERENCE, CKPT_LAST,
-)
-
 
 def _render_export_status(framework: str):
     """One-line readiness strip: checkpoint, artifacts, and the next action."""
@@ -49,12 +45,10 @@ def _render_export_status(framework: str):
 
 def render_export_page():
     from flashstudio.components.styles import render_page_header
-    from flashstudio.pages.export._common import EXPORT_FRAMEWORKS, FRAMEWORK_NOTES
+    from flashstudio.pages.export._common import EXPORT_FRAMEWORKS
     from flashstudio.utils import get_state, show_flashes
 
-    render_page_header(
-        "", "Export", "Convert, fuse, quantize, and benchmark trained weights",
-    )
+    render_page_header("", "Export")
     show_flashes()
 
     if "export_framework" not in st.session_state:
@@ -75,7 +69,6 @@ def render_export_page():
         ):
             st.session_state.pop(key, None)
     st.session_state["_export_framework_last"] = framework
-    st.caption(FRAMEWORK_NOTES.get(framework, ""))
     from flashstudio.components.dependencies import render_dependency_hint
 
     render_dependency_hint(
@@ -84,10 +77,6 @@ def render_export_page():
     )
 
     _render_export_status(framework)
-    st.caption(
-        "**Convert** creates the deployment file. **Optimize** fuses, quantizes, "
-        "or benchmarks that file."
-    )
 
     tab_convert, tab_optimize = st.tabs(["Convert", "Optimize"])
     with tab_convert:
@@ -107,34 +96,7 @@ def _render_convert(framework: str):
         st.markdown("#### Output")
         exported = st.session_state.get("exported_files", [])
         if not exported:
-            if framework == "Ultralytics":
-                st.caption("Ultralytics weight names after training:")
-                items = [
-                    ("model_best_inference.pt", "Best · YOLO"),
-                    ("model_last_inference.pt", "Latest · YOLO"),
-                    ("best.pt", "Ultralytics best"),
-                    ("last.pt", "Ultralytics last"),
-                ]
-            else:
-                st.caption(f"{framework} weight names after training:")
-                items = [
-                    (CKPT_BEST_INFERENCE, "Best · inference"),
-                    (CKPT_BEST, "Best · checkpoint"),
-                    (CKPT_LAST_INFERENCE, "Latest · inference"),
-                    (CKPT_LAST, "Latest · checkpoint"),
-                ]
-            for name, detail in items:
-                st.markdown(
-                    f'<span style="font-size:.84rem;color:var(--fs-body);">'
-                    f'• `{name}` — {detail}</span>',
-                    unsafe_allow_html=True,
-                )
-            st.caption("Manual export:")
-            st.code(
-                f"# {framework} export\n"
-                "Choose a checkpoint and format above, then press Export.",
-                language="bash",
-            )
+            st.caption("No exports yet.")
         else:
             for exp in exported:
                 st.markdown(

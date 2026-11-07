@@ -41,7 +41,6 @@ def _cleanup_live():
 def _render_live_tab():
     with st.container(border=True):
         st.markdown("#### Live stream")
-        st.caption("Connect to a webcam or RTSP stream and inspect detections live.")
 
         c1, c2, c3 = st.columns([3, 1, 1])
         with c1:
@@ -262,10 +261,7 @@ def _render_live_tab():
 def _render_multi_camera():
     """Run a short inference pass over several streams and show a grid."""
     with st.expander("Multi-camera grid — sample several streams at once"):
-        st.caption(
-            "Enter one source per line (webcam index, RTSP URL, or local video). "
-            "Each camera is sampled for the requested number of frames."
-        )
+        st.caption("Webcam index, RTSP URL, or local video — one per line.")
         sources_text = st.text_area(
             "Sources",
             placeholder="0\nrtsp://user:pass@host:554/stream1\n/tmp/opencode/live_test.mp4",

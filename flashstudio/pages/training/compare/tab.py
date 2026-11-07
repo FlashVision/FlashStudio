@@ -57,14 +57,10 @@ def _history(run_dir: str):
 
 
 def _render_compare_tab():
-    st.caption("Compare metrics across runs in the current workspace.")
     workspace = _get_save_dir()
     runs = _run_dirs(workspace)
     if not runs:
         st.info("No runs found in the workspace.")
-        if st.button("Go to Launch", key="compare_go_launch"):
-            st.session_state["_training_tab_next"] = "Launch"
-            st.rerun()
         return
 
     labels = {name: path for name, path in runs}
@@ -131,7 +127,7 @@ def _render_compare_tab():
         val_loss = history.get("val_loss", [])
         if val_loss:
             loss_fig.add_trace(go.Scatter(
-                x=val_epochs[: len(val_loss)], y=val_loss, mode="lines", name=f"{name} · val",
+                x=val_epochs[: len(val_loss)], y=val_loss, mode="lines", name=f"{name} · validation",
             ))
 
     map_fig.update_layout(

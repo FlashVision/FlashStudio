@@ -160,56 +160,35 @@ def _dataset_health():
 def _render_dataset_health():
     health = _dataset_health()
     with st.container(border=True):
-        hc1, hc2 = st.columns([6, 1])
+        hc1, hc2 = st.columns([8, 1])
         with hc1:
-            st.markdown(f"#### {health['dataset']}")
+            st.markdown(f"**{health['dataset']}**")
         with hc2:
             if st.button("Clear", key="clear_dataset_btn", use_container_width=True):
                 _clear_dataset()
 
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.metric("Train images", health["train_images"])
-        with m2:
-            st.metric("Validation images", health["val_images"])
-        with m3:
-            st.metric(health["annotations_label"], health["annotations"])
-        with m4:
-            st.metric("Classes", len(health["classes"]) or "—")
+        stats = [
+            f"<b>{health['train_images']:,}</b> train",
+            f"<b>{health['val_images']:,}</b> validation",
+            f"<b>{health['annotations']:,}</b> "
+            f"{health['annotations_label'].lower()}",
+            f"<b>{len(health['classes'])}</b> classes",
+        ]
+        if not health["issues"]:
+            stats.append("✓ ready")
+        st.markdown(
+            '<div class="ds-card-stats">'
+            + "".join(f"<span>{item}</span>" for item in stats)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
 
         if health["issues"]:
             st.warning("Needs attention: " + " · ".join(health["issues"]))
-        else:
-            st.success("Dataset is ready for preview, verification, and training.")
 
-        bc1, bc2, bc3, bc4, bc5 = st.columns(5)
-        with bc1:
-            if st.button("Preview", key="health_preview", use_container_width=True,
-                         type="primary" if not health["issues"] else "secondary"):
-                st.session_state["_data_tab_next"] = "Preview"
-                st.rerun()
-        with bc2:
-            if st.button("Verify", key="health_verify", use_container_width=True):
-                st.session_state["_data_tab_next"] = "Verify"
-                st.rerun()
-        with bc3:
-            if st.button("Fix issues", key="health_fix", use_container_width=True,
-                         type="primary" if health["issues"] else "secondary"):
-                st.session_state["_data_tab_next"] = "Fix"
-                st.rerun()
-        with bc4:
-            if st.button("Edit", key="health_edit", use_container_width=True):
-                st.session_state["_data_tab_next"] = "Edit"
-                st.rerun()
-        with bc5:
-            if st.button("Quality", key="health_quality", use_container_width=True):
-                st.session_state["_data_tab_next"] = "Quality"
-                st.rerun()
-
-        st.caption(
-            f"Train: `{health['train'] or '—'}` · "
-            f"Validation: `{health['val'] or '—'}`"
-        )
+        with st.expander("Dataset paths", expanded=False):
+            st.caption(f"Train: `{health['train'] or '—'}`")
+            st.caption(f"Validation: `{health['val'] or '—'}`")
 
 
 def _render_loader_controls():
@@ -230,23 +209,17 @@ def _render_loader_controls():
             "You can switch later if you change your mind."
         ),
     )
-    st.caption(
-        "Upload covers archives and local folders. "
-        "Download pulls a dataset from the registry."
-    )
     if mode == "Download":
         with st.container(border=True):
-            st.markdown("#### Download dataset")
             _render_download()
     else:
-        st.markdown("#### Upload dataset")
         _render_upload()
 
 
 def render_data_page():
     from flashstudio.components.styles import render_page_header
     from flashstudio.utils import show_flashes
-    render_page_header("", "Data", "Load, preview, verify, repair, and inspect datasets")
+    render_page_header("", "Data")
     show_flashes()
 
     train_path = st.session_state.get("train_img_path", "")
@@ -261,11 +234,7 @@ def render_data_page():
     if loaded:
         _render_dataset_health()
     else:
-        st.info(
-            "Start with **Load data**: choose **Upload** or **Download** once. "
-            "Preview, Verify, Fix, Edit, and Quality stay visible and unlock as "
-            "soon as a dataset is loaded."
-        )
+        st.info("No dataset loaded yet — choose **Upload** or **Download** below.")
 
     (tab_load, tab_preview, tab_verify,
      tab_fix, tab_edit, tab_quality) = _data_tabs(
@@ -274,10 +243,14 @@ def render_data_page():
 
     with tab_load:
         if loaded:
-            st.caption(
-                "A dataset is already loaded. Open **Replace dataset** to switch "
-                "to a different archive, folder, or download."
-            )
+            if st.button(
+                "Continue to Preview",
+                key="data_continue_preview",
+                type="primary",
+                use_container_width=False,
+            ):
+                st.session_state["_data_tab_next"] = "Preview"
+                st.rerun()
             with st.expander("Replace dataset", expanded=False):
                 _render_loader_controls()
         else:
@@ -285,25 +258,20 @@ def render_data_page():
 
     with tab_preview:
         with st.container(border=True):
-            st.markdown("#### Preview images")
             _render_preview()
 
     with tab_verify:
         with st.container(border=True):
-            st.markdown("#### Verify dataset")
             _render_verify()
 
     with tab_fix:
         with st.container(border=True):
-            st.markdown("#### Repair annotations")
             _render_fix()
 
     with tab_edit:
         with st.container(border=True):
-            st.markdown("#### Edit annotations")
             _render_edit()
 
     with tab_quality:
         with st.container(border=True):
-            st.markdown("#### Quality report")
             _render_quality()

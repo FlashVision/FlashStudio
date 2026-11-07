@@ -1,7 +1,7 @@
 """Background dataset download worker.
 
 The Streamlit process starts this module in a subprocess so the UI stays
-responsive and a download can be cancelled at any time.
+responsive and a download can be canceled at any time.
 
 Usage::
 
@@ -125,7 +125,7 @@ def _download(
                 with open(part, "wb") as f:
                     while True:
                         if os.path.exists(cancel_path):
-                            raise DownloadCancelled("Download cancelled")
+                            raise DownloadCancelled("Download canceled")
                         chunk = response.read(READ_SIZE)
                         if not chunk:
                             break
@@ -244,7 +244,7 @@ def _run_flashdet(cfg: dict, writer: StatusWriter) -> str:
         _download(candidates, archive, writer, cancel_path, label=key)
 
     if os.path.exists(cancel_path):
-        raise DownloadCancelled("Download cancelled")
+        raise DownloadCancelled("Download canceled")
 
     writer.write(
         force=True,
@@ -277,7 +277,7 @@ def _run_external(cfg: dict, writer: StatusWriter) -> str:
     try:
         _download([url], archive, writer, cancel_path, label=name)
         if os.path.exists(cancel_path):
-            raise DownloadCancelled("Download cancelled")
+            raise DownloadCancelled("Download canceled")
         writer.write(
             force=True,
             state="extracting",
@@ -317,7 +317,7 @@ def main() -> int:
             raise ValueError(f"Unknown download mode: {cfg.get('mode')!r}")
         return 0
     except DownloadCancelled:
-        writer.write(force=True, state="cancelled", message="Download cancelled")
+        writer.write(force=True, state="cancelled", message="Download canceled")
         return 130
     except Exception as exc:
         writer.write(

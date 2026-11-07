@@ -103,7 +103,35 @@ def _render_project(project):
         st.rerun()
 
 
+def _navigate_to(index: int):
+    st.session_state["current_step"] = index
+    st.session_state["show_project_manager"] = False
+    st.session_state.pop("_pending_nav", None)
+    st.rerun()
+
+
+def _render_nav_guard():
+    """Ask what to do when the user leaves while a download is running."""
+    pending = st.session_state.get("_pending_nav")
+    if pending is None:
+        return
+    st.warning("A dataset download is still running.")
+    if st.button("Keep downloading", key="nav_dl_continue",
+                 use_container_width=True):
+        _navigate_to(pending)
+    if st.button("Cancel download and switch", key="nav_dl_cancel",
+                 use_container_width=True):
+        from flashstudio.pages.data.helpers import _cancel_dataset_download
+
+        _cancel_dataset_download()
+        _navigate_to(pending)
+    if st.button("Stay here", key="nav_dl_stay", use_container_width=True):
+        st.session_state.pop("_pending_nav", None)
+        st.rerun()
+
+
 def _render_nav(current: int):
+    _render_nav_guard()
     for group, items in NAV_GROUPS:
         st.markdown(f'<div class="fs-nav-label">{group}</div>', unsafe_allow_html=True)
         for label, icon in items:
@@ -114,9 +142,13 @@ def _render_nav(current: int):
                 type="primary" if index == current else "secondary",
                 use_container_width=True,
             ):
-                st.session_state["current_step"] = index
-                st.session_state["show_project_manager"] = False
-                st.rerun()
+                download = st.session_state.get("_dataset_download")
+                if download and index != current and index != 1:
+                    # Don't silently abandon an active download: offer to
+                    # keep it running or cancel it before switching pages.
+                    st.session_state["_pending_nav"] = index
+                    st.rerun()
+                _navigate_to(index)
 
 
 def _render_progress(current: int):
@@ -141,7 +173,8 @@ def _render_status():
         str(st.session_state.get("dataset_name") or "Not loaded")[:DATASET_NAME_TRUNCATE]
     )
     model = html.escape(_model_label())
-    status = html.escape(str(st.session_state.get("training_status") or "Idle")[:14])
+    raw_status = str(st.session_state.get("training_status") or "Idle")
+    status = html.escape(raw_status[:14] + ("…" if len(raw_status) > 14 else ""))
     status_color = {
         "Complete": "#059669",
         "Running": "#D97706",

@@ -40,8 +40,8 @@ def render_pipeline_status():
             f'<div style="width:9px;height:9px;border-radius:50%;background:{color};'
             f'flex-shrink:0;"></div>'
             f'<div style="flex:1;">'
-            f'<span style="font-size:.84rem;font-weight:700;color:var(--fs-text);">{label}</span>'
-            f'<span style="font-size:.75rem;color:var(--fs-muted);margin-left:.45rem;">'
+            f'<span style="font-size: var(--fs-text-md);font-weight:700;color:var(--fs-text);">{label}</span>'
+            f'<span style="font-size: var(--fs-text-sm);color:var(--fs-muted);margin-left:.45rem;">'
             f'{detail_html}</span>'
             f'</div></div>',
             unsafe_allow_html=True,

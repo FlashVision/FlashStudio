@@ -50,7 +50,7 @@ def _render_checkpoints(run_dir):
                     with rc1:
                         st.metric("Best mAP@0.5", bm.group(1))
                     with rc2:
-                        st.metric("Best Val Loss", bm.group(2))
+                        st.metric("Best Validation Loss", bm.group(2))
                     break
         except OSError:
             pass

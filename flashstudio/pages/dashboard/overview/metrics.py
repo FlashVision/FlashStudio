@@ -27,17 +27,20 @@ def render_metrics(gpu, stats):
                 for name in files
                 if name.lower().endswith(IMG_EXTENSIONS)
             )
-        st.metric("Dataset", ds_name, delta=f"{img_count} training images", delta_color="off")
+        img_delta = f"{img_count:,} training image" + ("" if img_count == 1 else "s")
+        st.metric("Dataset", ds_name, delta=img_delta, delta_color="off")
     with m3:
         from flashstudio.utils import get_state
 
+        epochs = get_state("epochs")
         st.metric(
             "Model",
             model_display_name(),
-            delta=f"{get_state('epochs')} epochs planned",
+            delta=f"{epochs} epoch" + ("" if str(epochs) == "1" else "s") + " planned",
             delta_color="off",
         )
     with m4:
         best_map = f"{stats['best_map']:.3f}" if stats and stats["best_map"] is not None else "—"
         runs_count = stats["runs"] if stats else 0
-        st.metric("Best mAP@0.5", best_map, delta=f"{runs_count} runs", delta_color="off")
+        runs_delta = f"{runs_count} run" + ("" if runs_count == 1 else "s")
+        st.metric("Best mAP@0.5", best_map, delta=runs_delta, delta_color="off")

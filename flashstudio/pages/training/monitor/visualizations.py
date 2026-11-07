@@ -3,6 +3,7 @@
 import os
 import streamlit as st
 
+from flashstudio.components.media import render_fixed_image
 from flashstudio.constants import IMG_EXTENSIONS, VIS_SKIP_FILE, VIS_QUEUE_SIZE
 
 
@@ -16,12 +17,12 @@ def _render_visualizations(run_dir):
                 all_images.append(os.path.join(vis_dir, f))
 
     if not all_images:
-        st.info("No visualization images yet. GT vs Prediction images appear here during training.")
+        st.info("No visualization images yet. Ground truth vs prediction images appear here during training.")
         return
 
     queue = all_images[-VIS_QUEUE_SIZE:]
 
-    st.caption(f"Showing latest {len(queue)} of {len(all_images)} total  |  Queue drops oldest when new arrives")
+    st.caption(f"Latest {len(queue)} of {len(all_images)} images")
 
     cols = st.columns(VIS_QUEUE_SIZE)
     for i, img_path in enumerate(queue):
@@ -32,7 +33,7 @@ def _render_visualizations(run_dir):
 
 
 def _render_image_grid(img_dir, description, max_images=3):
-    """Render images from a directory in a grid (max 3 by default)."""
+    """Render images from a directory in a fixed-size grid (max 3 by default)."""
     if not os.path.isdir(img_dir):
         st.info(f"Directory not found: {img_dir}")
         return
@@ -43,10 +44,13 @@ def _render_image_grid(img_dir, description, max_images=3):
         return
 
     shown = images[:max_images]
-    st.caption(f"{description} — {len(shown)} images" + (f" (of {len(images)} total)" if len(images) > max_images else ""))
+    extra = f" of {len(images)}" if len(images) > max_images else ""
+    st.caption(f"{description} · {len(shown)}{extra}")
 
     cols = st.columns(len(shown))
     for i, col in enumerate(cols):
         img_path = os.path.join(img_dir, shown[i])
         with col:
-            st.image(img_path, caption=shown[i][:30], use_container_width=True)
+            # Fixed window height keeps portrait and landscape images aligned
+            # instead of producing ragged rows.
+            render_fixed_image(img_path, shown[i][:40])

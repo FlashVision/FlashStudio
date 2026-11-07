@@ -9,6 +9,13 @@ from flashstudio.pages.training.monitor.parsers import _find_log_file
 from flashstudio.pages.training.monitor.visualizations import _render_image_grid
 
 
+def _fmt_count(value):
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _render_gt_verification(run_dir):
     """GT verification — from dedicated directory, or extracted from log file."""
     from flashstudio.constants import GT_VERIFICATION_DIR, GT_REPORT_FILE, GT_SUMMARY_FILE
@@ -29,17 +36,17 @@ def _render_gt_verification(run_dir):
 
             m1, m2, m3, m4, m5, m6 = st.columns(6)
             with m1:
-                st.metric("Train Imgs", tc.get("num_images", 0))
+                st.metric("Train images", _fmt_count(tc.get("num_images", 0)))
             with m2:
-                st.metric("Train Ann", tc.get("num_annotations", 0))
+                st.metric("Train annotations", _fmt_count(tc.get("num_annotations", 0)))
             with m3:
-                st.metric("Val Imgs", vc.get("num_images", 0))
+                st.metric("Val images", _fmt_count(vc.get("num_images", 0)))
             with m4:
-                st.metric("Val Ann", vc.get("num_annotations", 0))
+                st.metric("Val annotations", _fmt_count(vc.get("num_annotations", 0)))
             with m5:
-                st.metric("Classes", report.get("num_classes", "?"))
+                st.metric("Classes", _fmt_count(report.get("num_classes", "?")))
             with m6:
-                st.metric("Avg Boxes/Img", f"{td.get('avg_boxes_per_sample', 0):.1f}")
+                st.metric("Boxes/image", f"{td.get('avg_boxes_per_sample', 0):.1f}")
 
         if os.path.isfile(summary_path):
             with st.expander("Verification Summary", expanded=False):
@@ -48,17 +55,17 @@ def _render_gt_verification(run_dir):
 
         raw_dir = os.path.join(gt_dir, "images", "raw")
         dl_dir = os.path.join(gt_dir, "images", "dataloader")
-        gt_tab_raw, gt_tab_dl = st.tabs(["Raw GT Images", "Dataloader GT Images"])
+        gt_tab_raw, gt_tab_dl = st.tabs(["Raw images", "Data loader images"])
         with gt_tab_raw:
-            _render_image_grid(raw_dir, "Raw ground truth (before augmentations)")
+            _render_image_grid(raw_dir, "Before augmentation")
         with gt_tab_dl:
-            _render_image_grid(dl_dir, "After dataloader transforms & augmentations")
+            _render_image_grid(dl_dir, "After augmentation")
         return
 
     # No dedicated directory — extract verification info from the log file
     log_file = _find_log_file(run_dir)
     if not log_file:
-        st.info("No GT verification data yet. Start training to generate.")
+        st.info("No ground-truth verification data yet. Start training to generate.")
         return
 
     with open(log_file, "r", encoding="utf-8", errors="replace") as f:
@@ -93,24 +100,24 @@ def _render_gt_verification(run_dir):
     if train_ok and val_ok:
         st.success("Dataset Verification: PASSED")
     elif train_ok:
-        st.warning("Dataset Verification: Train OK, Val missing")
+        st.warning("Dataset verification: training OK, validation set missing")
     else:
         st.error("Dataset Verification: FAILED")
 
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     with m1:
-        st.metric("Train Imgs", train_imgs.group(1) if train_imgs else "—")
+        st.metric("Train images", _fmt_count(train_imgs.group(1)) if train_imgs else "—")
     with m2:
-        st.metric("Train Ann", train_ann.group(1) if train_ann else "—")
+        st.metric("Train annotations", _fmt_count(train_ann.group(1)) if train_ann else "—")
     with m3:
-        st.metric("Val Imgs", val_imgs.group(1) if val_imgs else "—")
+        st.metric("Val images", _fmt_count(val_imgs.group(1)) if val_imgs else "—")
     with m4:
-        st.metric("Val Ann", val_ann.group(1) if val_ann else "—")
+        st.metric("Val annotations", _fmt_count(val_ann.group(1)) if val_ann else "—")
     with m5:
-        st.metric("Classes", num_cls)
+        st.metric("Classes", _fmt_count(num_cls))
     with m6:
         if train_found:
-            st.metric("Files OK", f"{train_found.group(1)}/{train_found.group(2)}")
+            st.metric("Files OK", f"{_fmt_count(train_found.group(1))}/{_fmt_count(train_found.group(2))}")
         else:
             st.metric("Files OK", "—")
 

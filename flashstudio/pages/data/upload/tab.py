@@ -17,10 +17,18 @@ except ImportError:
 
 
 def _sync_path_input(widget_key: str, state_key: str) -> None:
-    """Keep a text input widget in sync with a programmatically changed path."""
+    """Keep a text input widget in sync with a programmatically changed path.
+
+    A widget can hold an empty value left over from before a dataset was
+    loaded while the session state already points at a directory.  Treat that
+    as stale and push the real path back into the widget instead of letting
+    the empty value overwrite the dataset below.
+    """
     value = st.session_state.get(state_key, "")
     marker_key = f"{widget_key}_synced"
-    if st.session_state.get(marker_key) != value:
+    widget_value = st.session_state.get(widget_key)
+    stale_empty = bool(value) and not str(widget_value or "").strip()
+    if st.session_state.get(marker_key) != value or stale_empty:
         st.session_state[widget_key] = value
         st.session_state[marker_key] = value
 
@@ -46,17 +54,21 @@ def _render_upload(show_uploaders: bool = True):
                 "Images folder", placeholder="/path/to/train/",
                 key="_train_img_input",
             )
-            if manual_train != st.session_state.get("train_img_path", ""):
+            current_train = st.session_state.get("train_img_path", "")
+            if manual_train != current_train and (manual_train.strip() or not current_train):
                 normalized = _image_dir(manual_train) or manual_train
                 st.session_state["train_img_path"] = normalized
                 st.session_state["_train_img_input_synced"] = manual_train
-                if normalized and os.path.isdir(normalized):
-                    st.session_state["_data_tab_next"] = "Preview"
                 for key in ("dataset_output_path", "train_ann_path",
                             "_last_verify_ok", "detected_format",
                             "_quality_report_train", "_fix_report_train",
                             "class_names", "num_classes", "_class_names_synced"):
                     st.session_state.pop(key, None)
+                if normalized and os.path.isdir(normalized):
+                    # Re-render with the dataset loaded, but stay on Load data
+                    # so the user can finish setting up train + validation
+                    # before opening Preview.
+                    st.rerun()
 
     with col2:
         with st.container(border=True):
@@ -74,26 +86,23 @@ def _render_upload(show_uploaders: bool = True):
                 "Images folder", placeholder="/path/to/valid/",
                 key="_val_img_input",
             )
-            if manual_val != st.session_state.get("val_img_path", ""):
+            current_val = st.session_state.get("val_img_path", "")
+            if manual_val != current_val and (manual_val.strip() or not current_val):
                 normalized = _image_dir(manual_val) or manual_val
                 st.session_state["val_img_path"] = normalized
                 st.session_state["_val_img_input_synced"] = manual_val
-                if normalized and os.path.isdir(normalized):
-                    st.session_state["_data_tab_next"] = "Preview"
                 for key in ("dataset_output_path", "val_ann_path",
                             "_last_verify_ok", "detected_format",
                             "_quality_report_val", "_fix_report_val"):
                     st.session_state.pop(key, None)
+                if normalized and os.path.isdir(normalized):
+                    st.rerun()
 
-    with st.container(border=True):
-        st.markdown("#### Dataset format")
-        st.selectbox("Annotation format", ["COCO JSON", "Pascal VOC", "YOLO TXT"],
-                     key="ann_format")
+    # Format selector + conversion share one row — no separate box.
+    _render_conversion_hint()
 
     # ── Classes section ──
     _render_class_config()
-
-    _render_conversion_hint()
 
 
 def _render_class_config():
@@ -132,7 +141,7 @@ def _render_class_config():
 
         with cc3:
             nc = st.session_state.get("num_classes", 0)
-            st.metric("Class count", nc if nc else "—")
+            st.caption(f"**{nc}** classes" if nc else "—")
 
         # Auto-detect on first load if classes not set
         current_classes = st.session_state.get("class_names", "")
@@ -172,11 +181,19 @@ def _render_class_config():
                 current_classes.strip() + "\n",
                 file_name="classes.txt",
                 mime="text/plain",
-                use_container_width=True,
+                use_container_width=False,
             )
 
 
 def _render_conversion_hint():
+    """One row: annotation-format selector plus a convert action when needed."""
+    c1, c2, c3 = st.columns([1.6, 1.3, 3.1], gap="small")
+    with c1:
+        st.selectbox(
+            "Annotation format", ["COCO JSON", "Pascal VOC", "YOLO TXT"],
+            key="ann_format",
+        )
+
     train_path = st.session_state.get("train_img_path", "")
     if not train_path or not os.path.isdir(train_path):
         return
@@ -203,16 +220,19 @@ def _render_conversion_hint():
                 needs = True
                 detected = "txt"
                 st.session_state["detected_format"] = "txt"
-    if needs:
-        c1, c2 = st.columns([1, 4])
-        with c1:
-            if st.button("Convert to COCO", type="primary", key="manual_convert", use_container_width=True):
-                from flashstudio.utils.dataset_paths import split_dir
+    if not needs:
+        return
+    with c2:
+        if st.button("Convert to COCO", type="primary", key="manual_convert",
+                     use_container_width=True):
+            from flashstudio.utils.dataset_paths import split_dir
 
-                source = os.path.dirname(split_dir(train_path))
-                if not os.path.isdir(source):
-                    source = split_dir(train_path)
-                tfmt = "txt" if "YOLO" in ann_format or detected == "txt" else "voc"
-                _convert_to_coco(source, "train", tfmt)
-        with c2:
-            st.caption(f"Format detected: **{detected or ann_format}** → auto-convert to COCO JSON")
+            source = os.path.dirname(split_dir(train_path))
+            if not os.path.isdir(source):
+                source = split_dir(train_path)
+            tfmt = "txt" if "YOLO" in ann_format or detected == "txt" else "voc"
+            _convert_to_coco(source, "train", tfmt)
+    with c3:
+        st.caption(
+            f"Detected **{detected or ann_format}** → auto-convert to COCO JSON"
+        )

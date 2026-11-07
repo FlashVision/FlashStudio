@@ -130,7 +130,7 @@ def _tab_hyper():
                       _clamp("base_momentum", 0.80, 0.99, 0.937),
                       step=0.001, format="%.3f", key="base_momentum")
         with ec4:
-            st.slider("Val confidence", 0.001, 0.5,
+            st.slider("Validation confidence", 0.001, 0.5,
                       _clamp("val_score_thr", 0.001, 0.5, 0.01),
                       step=0.001, format="%.3f", key="val_score_thr")
             st.number_input("Max detections", 10, 1000,
@@ -177,21 +177,15 @@ def _summary_bar():
             "and TensorRT via the Ultralytics runtime."
         )
     elif framework == "Ultralytics":
-        note = (
-            "Ultralytics architecture with the FlashDet trainer; switch the "
-            "backend on Training → Launch for native Ultralytics training."
-        )
+        note = "switch the backend on Training → Launch for native YOLO training."
     elif framework == "YOLOX":
-        note = (
-            "YOLOX uses the FlashDet deployment pipeline; training is not "
-            "implemented by the installed FlashDet build."
-        )
+        note = "training is not supported by the installed FlashDet build."
     else:
-        note = (
-            "Pico-Zoo backbones, LoRA/QLoRA, fusion, ONNX, and INT8 are "
-            "available from the FlashDet flow."
-        )
-    st.caption(f"Framework: **{framework}** · Training backend: **{backend}** · {note}")
+        note = ""
+    caption = f"Framework: **{framework}** · Training backend: **{backend}**"
+    if note:
+        caption += f" · {note}"
+    st.caption(caption)
     with st.expander("Save / Load Config", expanded=False):
         c1, c2 = st.columns(2)
         with c1:

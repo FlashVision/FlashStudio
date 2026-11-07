@@ -22,3 +22,15 @@ def _find_log_file(run_dir: str):
     if not logs:
         return None
     return max(logs, key=lambda p: os.path.getsize(p))
+
+
+def _training_display_status() -> str:
+    """Current status, preferring the live process over a stale stored status.
+
+    Session state keeps the last run's status (e.g. "Complete") until a new
+    process updates it.  When training is actually alive we must report that
+    instead of the previous run's result.
+    """
+    if st.session_state.get("training_active"):
+        return "Paused" if st.session_state.get("training_paused") else "Running"
+    return str(st.session_state.get("training_status") or "Not started")

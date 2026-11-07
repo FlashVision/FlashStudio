@@ -119,16 +119,17 @@ def render_recent_runs():
         date_str = time.strftime("%b %d, %H:%M", time.localtime(mtime))
         status_color = COLOR_SUCCESS if (has_best or has_final) else COLOR_TEXT_MUTED
         import html
-        name_html = html.escape(str(name)[:25])
+        raw_name = str(name)
+        name_html = html.escape(raw_name[:24] + ("…" if len(raw_name) > 25 else ""))
         date_html = html.escape(date_str)
         info_html = html.escape(str(info))
 
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;align-items:center;'
-            f'font-size:0.85rem;padding:0.4rem 0;border-bottom:1px solid {COLOR_BORDER};">'
+            f'font-size: var(--fs-text-md);padding:0.4rem 0;border-bottom:1px solid {COLOR_BORDER};">'
             f'<div>'
             f'<span style="font-weight:600;color:{COLOR_TEXT_PRIMARY};">{name_html}</span>'
-            f'<span style="color:{COLOR_TEXT_MUTED};font-size:0.75rem;margin-left:0.5rem;">{date_html}</span>'
+            f'<span style="color:{COLOR_TEXT_MUTED};font-size: var(--fs-text-sm);margin-left:0.5rem;">{date_html}</span>'
             f'</div>'
             f'<div style="display:flex;gap:0.8rem;align-items:center;">'
             f'<span style="color:{COLOR_TEXT_SECONDARY};">{info_html}</span>'

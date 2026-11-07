@@ -40,18 +40,13 @@ def render_model_page():
     from flashstudio.utils import show_flashes, update_config_mirror
     from flashstudio.pages.model.architecture.tab import _sync_framework_from_family
 
-    render_page_header("", "Model", "Choose an architecture and tune training options")
+    render_page_header("", "Model")
     show_flashes()
 
     # Show the current configuration before the tabs so users do not have to
     # scroll through every tab to confirm what will be trained.
     _sync_framework_from_family()
     _summary_bar()
-
-    st.caption(
-        "Start with **Architecture**. Hyperparameters, Augmentation, and "
-        "Advanced keep safe defaults until you need to tune them."
-    )
 
     tab_arch, tab_options = st.tabs(["Architecture", "Training options"])
 

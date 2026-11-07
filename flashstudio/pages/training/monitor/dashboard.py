@@ -9,20 +9,35 @@ from flashstudio.pages.training.monitor.visualizations import _render_visualizat
 from flashstudio.pages.training.monitor.gt_verification import _render_gt_verification
 from flashstudio.pages.training.monitor.log_viewer import _render_full_log
 from flashstudio.pages.training.monitor.checkpoints import _render_checkpoints
+from flashstudio.pages.training.progress import _render_training_progress
 
 
-def _render_run_dashboard(run_dir):
-    """Render full dashboard for a single training run — always shows all 5 sub-tabs."""
+def _load_run_data(run_dir):
+    """Return ``(log_file, history)`` for a run directory."""
     log_file = None
     history = None
-
     if run_dir and os.path.isdir(run_dir):
         log_file = _find_log_file(run_dir)
         # Prefer CSV (clean numeric data), fall back to log parsing
         history = _parse_training_csv(run_dir)
         if not history:
             history = _parse_training_log(log_file) if log_file else None
-        _render_metrics_from_history(history, run_dir)
+    return log_file, history
+
+
+def _render_run_dashboard(run_dir, show_summary: bool = True):
+    """Render full dashboard for a single training run — always shows all 5 sub-tabs.
+
+    ``show_summary`` controls the run-level status/metric cards above the tabs;
+    the Launch tab already shows them, so Display can skip them to save space.
+    """
+    log_file, history = _load_run_data(run_dir)
+
+    if run_dir and os.path.isdir(run_dir):
+        if show_summary:
+            # Live progress (works mid-epoch, unlike the per-epoch history).
+            _render_training_progress(run_dir, show_eta=False)
+            _render_metrics_from_history(history, run_dir)
 
         # Check for errors in log file — show error banner at top
         if log_file and os.path.isfile(log_file):
@@ -46,95 +61,67 @@ def _render_run_dashboard(run_dir):
     ])
 
     with tab_curves:
-        with st.container(border=True):
-            st.markdown("#### Training curves")
-            if run_dir and os.path.isdir(run_dir):
-                _render_curves(history, run_dir)
-            else:
-                st.info("No training data yet. Start a training run to see curves.")
+        if run_dir and os.path.isdir(run_dir):
+            _render_curves(history, run_dir)
+        else:
+            st.info("No training data yet. Start a training run to see curves.")
 
     with tab_viz:
-        with st.container(border=True):
-            st.markdown("#### Visualizations")
-            if run_dir and os.path.isdir(run_dir):
-                _render_visualizations(run_dir)
-            else:
-                st.info("No visualizations yet.")
+        if run_dir and os.path.isdir(run_dir):
+            _render_visualizations(run_dir)
+        else:
+            st.info("No visualizations yet.")
 
     with tab_gt:
-        with st.container(border=True):
-            st.markdown("#### Ground truth")
-            if run_dir and os.path.isdir(run_dir):
-                _render_gt_verification(run_dir)
-            else:
-                st.info("No GT verification data yet.")
+        if run_dir and os.path.isdir(run_dir):
+            _render_gt_verification(run_dir)
+        else:
+            st.info("No ground-truth verification data yet.")
 
     with tab_log:
-        with st.container(border=True):
-            st.markdown("#### Training log")
-            if log_file:
-                _render_full_log(log_file)
-            else:
-                st.info("No training log yet.")
+        if log_file:
+            _render_full_log(log_file)
+        else:
+            st.info("No training log yet.")
 
     with tab_files:
-        with st.container(border=True):
-            st.markdown("#### Checkpoints")
-            if run_dir and os.path.isdir(run_dir):
-                _render_checkpoints(run_dir)
-            else:
-                st.info("No checkpoint files yet.")
+        if run_dir and os.path.isdir(run_dir):
+            _render_checkpoints(run_dir)
+        else:
+            st.info("No checkpoint files yet.")
 
 
 def _render_metrics_from_history(history, run_dir):
-    """Render top metric cards from parsed history (CSV or log-based)."""
-    cols = st.columns(7)
+    """Render metric cards from parsed history (CSV or log-based).
+
+    Two rows of three keep long labels (e.g. "Validation Loss") readable at
+    normal widths; the Model/Device info already lives in the run meta cards.
+    """
+    row1 = st.columns(3)
+    row2 = st.columns(3)
 
     if history:
         n_epochs = len(history["epochs"])
         total = history.get("total_epochs") or n_epochs
+        losses = [x for x in history["train_loss"] if x is not None]
+        vl = [x for x in history.get("val_loss", []) if x is not None]
+        mp = [x for x in history.get("mAP50", []) if x is not None]
+        lr_values = [x for x in history.get("lr", []) if x is not None]
 
-        with cols[0]:
+        with row1[0]:
             st.metric("Epoch", f"{n_epochs}/{total}")
-        with cols[1]:
-            losses = [x for x in history["train_loss"] if x is not None]
-            val = f"{losses[-1]:.1f}" if losses else "—"
-            st.metric("Train Loss", val)
-        with cols[2]:
-            vl = [x for x in history.get("val_loss", []) if x is not None]
-            val = f"{vl[-1]:.2f}" if vl else "—"
-            st.metric("Val Loss", val)
-        with cols[3]:
-            mp = [x for x in history.get("mAP50", []) if x is not None]
-            val = f"{mp[-1]:.4f}" if mp else "—"
-            st.metric("mAP@0.5", val)
-        with cols[4]:
-            best = f"{max(mp):.4f}" if mp else "—"
-            st.metric("Best mAP", best)
-        with cols[5]:
-            lr_values = [x for x in history.get("lr", []) if x is not None]
-            lr_val = f"{lr_values[-1]:.2e}" if lr_values else "—"
-            st.metric("LR", lr_val)
-        with cols[6]:
-            model = history.get("model_info", "")
-            device = history.get("device", "")
-            label = model or device or "—"
-            st.metric("Model", label[:12])
+        with row1[1]:
+            st.metric("Training Loss", f"{losses[-1]:.1f}" if losses else "—")
+        with row1[2]:
+            st.metric("Validation Loss", f"{vl[-1]:.2f}" if vl else "—")
+        with row2[0]:
+            st.metric("mAP@0.5", f"{mp[-1]:.4f}" if mp else "—")
+        with row2[1]:
+            st.metric("Best mAP", f"{max(mp):.4f}" if mp else "—")
+        with row2[2]:
+            st.metric("LR", f"{lr_values[-1]:.2e}" if lr_values else "—")
 
-        if n_epochs < total:
-            st.progress(n_epochs / max(total, 1))
-            epoch_times = history.get("epoch_time", [])
-            if epoch_times:
-                avg_time = sum(epoch_times) / len(epoch_times)
-                remaining = (total - n_epochs) * avg_time
-                if remaining > 3600:
-                    eta = f"~{remaining / 3600:.1f}h"
-                elif remaining > 60:
-                    eta = f"~{remaining / 60:.0f}m"
-                else:
-                    eta = f"~{remaining:.0f}s"
-                st.caption(f"ETA: {eta} ({avg_time:.1f}s/epoch)")
     else:
-        for col in cols:
+        for col in [*row1, *row2]:
             with col:
                 st.metric("—", "No data")

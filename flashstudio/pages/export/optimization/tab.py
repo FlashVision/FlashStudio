@@ -30,10 +30,6 @@ def _select_weight(framework: str = "FlashDet") -> tuple[str, int]:
 
 def _render_fusion(weights: str, input_size: int):
     st.markdown("#### Layer & kernel fusion")
-    st.caption(
-        "Folds BatchNorm into convs, collapses reparameterizable blocks, and "
-        "merges conv→BN→activation triples. Training should use the original checkpoint."
-    )
     c1, c2, c3 = st.columns(3)
     with c1:
         skip_rep = st.checkbox("Skip Rep fusion", False, key="opt_skip_rep")
@@ -116,10 +112,6 @@ def _render_fusion(weights: str, input_size: int):
 
 def _render_onnx(weights: str, input_size: int):
     st.markdown("#### ONNX export + parity")
-    st.caption(
-        "Exports a portable ONNX graph, optionally fusing Rep blocks and "
-        "simplifying the graph. Parity compares PyTorch and ONNX outputs."
-    )
     c1, c2, c3 = st.columns(3)
     with c1:
         fuse = st.checkbox("Fuse before export", True, key="opt_onnx_fuse")
@@ -180,10 +172,6 @@ def _render_onnx(weights: str, input_size: int):
 
 def _render_int8(weights: str):
     st.markdown("#### INT8 quantization")
-    st.caption(
-        "Statically calibrates an ONNX graph to INT8 QDQ. Calibration images "
-        "should look like the deployment data."
-    )
     onnx_result = st.session_state.get("opt_onnx") or {}
     default_onnx = onnx_result.get("path", "")
     if default_onnx and not st.session_state.get("opt_int8_onnx"):
@@ -256,7 +244,6 @@ def _render_int8(weights: str):
 
 def _render_benchmark(weights: str, input_size: int):
     st.markdown("#### Benchmark")
-    st.caption("Measures FPS, latency, parameters, and file size for PyTorch/ONNX artifacts.")
     candidates = []
     if weights:
         candidates.append(weights)

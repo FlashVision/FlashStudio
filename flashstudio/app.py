@@ -224,6 +224,12 @@ def main():
 
     current = STEPS[st.session_state["current_step"]]
 
+    # Track page transitions so a page can reset its own sub-navigation when
+    # the user arrives from elsewhere (e.g. Training always opens on Launch).
+    previous_page = st.session_state.get("_active_page")
+    st.session_state["_active_page"] = current["id"]
+    st.session_state["_page_changed"] = previous_page != current["id"]
+
     try:
         PAGE_RENDERERS[current["id"]]()
     except Exception as _e:

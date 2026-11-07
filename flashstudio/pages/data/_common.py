@@ -29,6 +29,31 @@ def _load_data_prompt(message: str, key: str) -> None:
         st.rerun()
 
 
+def make_thumbnail(image, size=(480, 360), background=(246, 247, 251)):
+    """Letterbox an image onto a fixed-size canvas.
+
+    Grids of mixed aspect ratios otherwise produce uneven rows and a page
+    that jumps while images load.  Letterboxing keeps every thumbnail the
+    same shape without cropping annotations.
+    """
+    from PIL import Image
+
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    width, height = size
+    ratio = min(width / max(image.width, 1), height / max(image.height, 1))
+    resized = image.resize(
+        (max(1, int(image.width * ratio)), max(1, int(image.height * ratio))),
+        Image.LANCZOS,
+    )
+    canvas = Image.new("RGB", size, background)
+    canvas.paste(
+        resized,
+        ((width - resized.width) // 2, (height - resized.height) // 2),
+    )
+    return canvas
+
+
 
 def _get_data_root() -> str:
     """Return the active project's data root, or the legacy global data dir.
@@ -105,12 +130,27 @@ def _check_network() -> bool:
         return False
 
 
-def _dataset_already_downloaded(dataset_id: str, output_dir: str | None = None) -> str | None:
+def _resolve_download_root() -> str:
+    """Folder where downloaded datasets are stored.
+
+    Defaults to ``<project data>/datasets`` so downloads stay inside the
+    project instead of mixing with uploads and job metadata.  The value can be
+    changed from the Download tab; relative paths resolve against the project
+    data root.
+    """
+    raw = str(st.session_state.get("download_output_dir") or "").strip()
+    if not raw:
+        return os.path.join(_get_data_root(), "datasets")
+    raw = os.path.expanduser(raw)
+    if not os.path.isabs(raw):
+        raw = os.path.join(_get_data_root(), raw)
+    return os.path.abspath(raw)
+
+
+def _usable_dataset_dir(output_dir: str) -> str | None:
     from flashstudio.utils.dataset_paths import resolve_annotation_file
 
-    if output_dir is None:
-        output_dir = os.path.join(_get_data_root(), dataset_id)
-    if not os.path.isdir(output_dir):
+    if not output_dir or not os.path.isdir(output_dir):
         return None
     t = os.path.join(output_dir, "train")
     v = os.path.join(output_dir, "valid")
@@ -125,6 +165,22 @@ def _dataset_already_downloaded(dataset_id: str, output_dir: str | None = None) 
     if not resolve_annotation_file(v, split="val"):
         return None
     return output_dir
+
+
+def _dataset_already_downloaded(dataset_id: str, output_dir: str | None = None) -> str | None:
+    candidates = []
+    if output_dir:
+        candidates.append(output_dir)
+    else:
+        candidates.append(os.path.join(_resolve_download_root(), dataset_id))
+        # Datasets downloaded before the destination option existed live
+        # directly under the project data root; keep finding them.
+        candidates.append(os.path.join(_get_data_root(), dataset_id))
+    for candidate in candidates:
+        found = _usable_dataset_dir(candidate)
+        if found:
+            return found
+    return None
 
 
 def _is_archive_url(url: str) -> bool:

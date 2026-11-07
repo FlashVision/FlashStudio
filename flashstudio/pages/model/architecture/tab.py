@@ -114,7 +114,7 @@ def _flashdet_arch(nc: int):
             st.selectbox(
                 "Pico-Zoo backbone", PICO_BACKBONES,
                 key="pico_backbone",
-                help="Every Pico-Zoo family has a matching neck; pick Auto unless you need a specific one.",
+                help="Every Pico-Zoo family has a matching neck; pick LiteBackbone (default) unless you need a specific one.",
             )
             if st.session_state.get("pico_backbone") not in ("LiteBackbone (default)", "PicoBackbone"):
                 st.selectbox(
@@ -276,8 +276,6 @@ def _pretrain_finetune(framework: str, series: str | None = None,
                         st.caption(f"Not found: `{path}`")
             elif pt == "Download":
                 _download_panel(framework, series=series, size=size)
-            else:
-                st.caption("Start from scratch. Choose Custom or Download to load weights.")
         with c2:
             st.markdown("#### Fine-tune")
             ft = st.radio("Mode", ["Full fine-tune", "Freeze backbone", "Freeze backbone + neck", "LoRA"],

@@ -82,6 +82,15 @@ async def click_tab(page, tab_name):
             await tabs.nth(i).click()
             await page.wait_for_timeout(1200)
             return True
+    # Page-level segmented controls (e.g. Training Launch/Monitor/Compare)
+    # render as buttons rather than role="tab".
+    buttons = page.locator(f'[data-testid="stMain"] button:has-text("{tab_name}")')
+    for i in range(await buttons.count()):
+        txt = (await buttons.nth(i).inner_text()).strip()
+        if txt == tab_name:
+            await buttons.nth(i).click()
+            await page.wait_for_timeout(1200)
+            return True
     return False
 
 
@@ -169,12 +178,10 @@ async def record_training(page):
     await nav_to_page(page, 3, "Training")
     await screenshot(page, "training_01_launch", 1500)
 
-    await click_tab(page, "Monitor")
+    # The run dashboard (status, metrics, monitoring tabs) is embedded in
+    # Launch, so scroll down to capture it.
+    await page.mouse.wheel(0, 900)
     await screenshot(page, "training_02_monitor", 1000)
-
-    # Go back to Launch to show experiment section
-    await click_tab(page, "Launch")
-    await screenshot(page, "training_03_experiment", 1000)
 
     frames_to_gif("training", "04_training")
 
@@ -254,7 +261,7 @@ async def main():
     for g in gifs:
         size = os.path.getsize(g) / 1e6
         print(f"  {os.path.basename(g):30s} {size:.1f}MB")
-    print(f"\nIndividual frames: demos/_frames/")
+    print("\nIndividual frames: demos/_frames/")
     print("=" * 50)
 
 

@@ -6,17 +6,60 @@ import os
 import streamlit as st
 
 from flashstudio.utils.device import has_cuda
-from flashstudio.pages.training._common import _get_save_dir
-from flashstudio.pages.training.launch.preflight import _run_preflight_checks
-from flashstudio.pages.training.launch.runner import (
-    _start_training, _generate_run_name, _sanitize_run_name,
+from flashstudio.pages.training._common import (
+    _get_save_dir, _training_display_status,
 )
-from flashstudio.pages.training.launch.controls import (
-    _stop_training, _pause_training, _resume_active_training,
+from flashstudio.pages.training.launch.preflight import (
+    _other_active_runs, _run_preflight_checks,
+)
+from flashstudio.pages.training.launch.runner import (
+    _generate_run_name, _sanitize_run_name,
 )
 from flashstudio.pages.training.launch.dialogs import (
     _render_clean_workspace_dialog, _render_resume_dialog,
 )
+
+
+def _request_training_start(run_path):
+    """Queue a start from a widget callback (runs before the page renders).
+
+    Doing the state change in ``on_click`` avoids calling ``st.rerun`` from
+    inside a tab body, which used to leave a second copy of the tab component
+    in the DOM.
+    """
+    import time as _time
+
+    st.session_state.update({
+        "training_paused": False,
+        "active_run_path": run_path,
+        "training_start_time": _time.time(),
+        "training_status": "Starting",
+        "_start_training_pending": run_path,
+    })
+
+
+def _queue_training_action(action, payload=None):
+    """Queue stop/pause/resume so the rerun happens before tabs render."""
+    st.session_state["_training_action"] = (action, payload)
+
+
+def _create_run(run_path, run_name):
+    """Create the run folder and mark it ready from a widget callback."""
+    from flashstudio.utils import flash
+
+    if not str(run_name).strip():
+        flash("Run name cannot be empty", "error")
+        return
+    os.makedirs(run_path, exist_ok=True)
+    st.session_state["run_created"] = True
+    st.session_state["_run_name_at_create"] = run_name
+    st.session_state["save_dir_run"] = run_path
+    if not st.session_state.get("training_active"):
+        st.session_state["training_status"] = "Not started"
+        st.session_state["training_paused"] = False
+        st.session_state.pop("training_error", None)
+        st.session_state.pop("training_start_time", None)
+    flash(f"Run `{run_name}` created", "success")
 
 
 def _set_cfg(key, value):
@@ -56,8 +99,7 @@ def _render_start_weights(backend: str):
         st.caption(f"Starting checkpoint · `{os.path.basename(custom)}`")
         return
 
-    st.markdown("##### Starting weights")
-    st.caption("No checkpoint configured. Download pretrained weights or start from random.")
+    st.markdown("#### Starting weights")
     if backend == "Ultralytics":
         family = str(get_state("arch_family") or "YOLOv8")
         if not family.startswith("YOLOv"):
@@ -131,8 +173,13 @@ def _render_preflight():
     return all_ok
 
 
-def _render_start_tab():
-    """Create a run, configure it, and launch training."""
+def _render_start_tab(empty_hint=None):
+    """Create a run, configure it, and launch training.
+
+    ``empty_hint`` optionally replaces the "create a run" notice shown before a
+    run exists — the Training page uses it to surface the selected run's live
+    summary right where the blocker used to be.
+    """
     runs_root = _get_save_dir()
     if runs_root:
         os.makedirs(runs_root, exist_ok=True)
@@ -144,13 +191,16 @@ def _render_start_tab():
     current_name = st.session_state.get("run_name", "")
     if prev_name and current_name != prev_name:
         st.session_state["run_created"] = False
+        # A different run is being configured; do not keep the previous run's
+        # "Complete" status on the Launch panel.
+        if not st.session_state.get("training_active"):
+            st.session_state["training_status"] = "Not started"
 
     run_created = st.session_state.get("run_created", False)
     nc = st.session_state.get("num_classes", 0)
 
     with st.container(border=True):
         st.markdown("#### 1 · Name this run")
-        st.caption("Each run gets its own folder for checkpoints, logs, and plots.")
         name_col, button_col = st.columns([3, 1])
         with name_col:
             st.text_input(
@@ -166,19 +216,12 @@ def _render_start_tab():
 
         with button_col:
             if not run_created:
-                if st.button("Create run", key="btn_create_run",
-                             use_container_width=True, type="primary"):
-                    from flashstudio.utils import flash
-                    if not run_name.strip():
-                        flash("Run name cannot be empty", "error")
-                        st.rerun()
-                    else:
-                        os.makedirs(full_run_path, exist_ok=True)
-                        st.session_state["run_created"] = True
-                        st.session_state["_run_name_at_create"] = run_name
-                        st.session_state["save_dir_run"] = full_run_path
-                        flash(f"Run `{run_name}` created", "success")
-                        st.rerun()
+                st.button(
+                    "Create run", key="btn_create_run",
+                    use_container_width=True, type="primary",
+                    on_click=_create_run,
+                    args=(full_run_path, run_name),
+                )
             else:
                 st.success("Created")
         st.caption(f"Output · `{full_run_path}`")
@@ -186,7 +229,10 @@ def _render_start_tab():
             st.caption(f"Active run · **{run_name}**")
 
     if not run_created:
-        st.info("Create a run to unlock configuration and launch.")
+        if empty_hint:
+            empty_hint()
+        else:
+            st.info("Create a run to start training.")
         return
 
     left, right = st.columns([3, 2])
@@ -213,7 +259,7 @@ def _render_start_tab():
                 ),
             )
             if backend == "Ultralytics":
-                st.caption("COCO labels are converted to YOLO `.txt` inside the run folder.")
+                st.caption("COCO labels are converted to YOLO `.txt` in the run folder.")
             from flashstudio.components.dependencies import render_dependency_hint
 
             render_dependency_hint(
@@ -225,7 +271,7 @@ def _render_start_tab():
             with cc1:
                 st.metric("Model", _model_label())
             with cc2:
-                st.metric("Dataset", (st.session_state.get("dataset_name") or "—")[:18])
+                st.metric("Dataset", st.session_state.get("dataset_name") or "—")
             with cc3:
                 st.metric("Classes", nc if nc else "—")
             with cc4:
@@ -240,49 +286,73 @@ def _render_start_tab():
             with cc8:
                 st.metric("Device", "GPU" if has_cuda() else "CPU")
 
+            # A created run keeps its live progress visible in the setup panel,
+            # not only in the run summary below the launch controls.
+            from flashstudio.pages.training.progress import _render_training_progress
+            _render_training_progress(full_run_path, show_eta=False)
+
             st.divider()
             _render_start_weights(backend)
 
     with right:
         with st.container(border=True):
             st.markdown("#### 3 · Launch")
-            if st.session_state.get("training_active"):
+            status = _training_display_status()
+            active = bool(st.session_state.get("training_active"))
+            if active:
                 pid = st.session_state.get("training_pid")
                 paused = st.session_state.get("training_paused")
                 st.success(f"{'Paused' if paused else 'Running'} · PID {pid}")
             else:
-                status = st.session_state.get("training_status", "Not started")
-                st.caption(f"Status · **{status}**")
+                label = "Last run" if status in ("Complete", "Stopped", "Failed") else "Status"
+                st.caption(f"{label} · **{status}**")
 
             all_ok = _render_preflight()
             if not all_ok:
                 st.caption("Resolve the failed checks to enable Start.")
+                # Offer a direct stop action for the run blocking this launch.
+                for idx, other in enumerate(_other_active_runs()):
+                    pid = other["pids"][0] if other.get("pids") else "?"
+                    st.button(
+                        f"Stop {other['name']} (PID {pid})",
+                        key=f"stop_other_run_{idx}",
+                        use_container_width=True,
+                        on_click=_queue_training_action,
+                        args=("stop_run", other["path"]),
+                    )
 
             if not st.session_state.get("training_active"):
-                if st.button("Start training", use_container_width=True, type="primary",
-                             key="btn_start_training", disabled=not all_ok):
-                    import time as _time
-                    st.session_state.update({
-                        "training_paused": False,
-                        "active_run_path": full_run_path,
-                        "training_start_time": _time.time(),
-                        "_goto_monitor": True,
-                    })
-                    _start_training()
+                st.button(
+                    "Start training", use_container_width=True, type="primary",
+                    key="btn_start_training", disabled=not all_ok,
+                    on_click=_request_training_start,
+                    args=(full_run_path,),
+                )
             else:
-                if st.button("Stop training", use_container_width=True,
-                             key="btn_stop_training"):
-                    _stop_training()
+                st.button(
+                    "Stop training", use_container_width=True,
+                    key="btn_stop_training",
+                    on_click=_queue_training_action,
+                    args=("stop",),
+                )
 
             b1, b2, b3 = st.columns(3)
             with b1:
                 if st.session_state.get("training_active"):
                     if st.session_state.get("training_paused"):
-                        if st.button("Resume", use_container_width=True, key="btn_resume_active"):
-                            _resume_active_training()
+                        st.button(
+                            "Resume", use_container_width=True,
+                            key="btn_resume_active",
+                            on_click=_queue_training_action,
+                            args=("resume",),
+                        )
                     else:
-                        if st.button("Pause", use_container_width=True, key="btn_pause_training"):
-                            _pause_training()
+                        st.button(
+                            "Pause", use_container_width=True,
+                            key="btn_pause_training",
+                            on_click=_queue_training_action,
+                            args=("pause",),
+                        )
                 else:
                     st.button("Pause", use_container_width=True, key="btn_pause_disabled",
                               disabled=True)

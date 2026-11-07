@@ -4,8 +4,9 @@ import os
 import json
 import streamlit as st
 
-from flashstudio.constants import IMG_EXTENSIONS_ALL, BBOX_COLORS_RGB, MAX_PREVIEW_COLS
-from flashstudio.pages.data._common import _load_data_prompt
+from flashstudio.constants import IMG_EXTENSIONS_ALL, BBOX_COLORS_RGB
+from flashstudio.components.media import render_fixed_image
+from flashstudio.pages.data._common import _load_data_prompt, make_thumbnail
 
 
 def _render_preview():
@@ -23,9 +24,15 @@ def _render_preview():
     if st.session_state.get("prev_split") not in splits:
         st.session_state["prev_split"] = splits[0]
 
-    c1, c2, c3 = st.columns([2, 1, 1])
-    with c1:
-        split = st.radio("Split", splits, horizontal=True, key="prev_split")
+    # One compact header row: split · boxes · navigation · position · jump.
+    head = st.columns(
+        [1.7, 0.8, 0.42, 0.42, 1.6, 0.42, 0.42, 1.0], gap="small"
+    )
+    with head[0]:
+        split = st.radio(
+            "Split", splits, horizontal=True, key="prev_split",
+            label_visibility="collapsed", help="Dataset split to preview",
+        )
     preview_path = train_path if split == "Train" else val_path
     if not preview_path or not os.path.isdir(preview_path):
         st.warning("Path not set.")
@@ -41,35 +48,68 @@ def _render_preview():
         st.warning("No images.")
         return
 
-    with c2:
-        max_count = min(12, len(all_imgs))
-        if max_count <= 1:
-            n = 1
-        else:
-            n = st.slider("Count", 1, max_count, min(4, max_count),
-                          key="prev_n")
-    with c3:
-        bbox = st.checkbox("Boxes", value=True, key="prev_bb")
+    with head[1]:
+        bbox = st.checkbox(
+            "Boxes", value=True, key="prev_bb",
+            help="Draw annotation boxes on the images",
+        )
 
+    # Two large tiles per page: no count control, no layout jumps.
+    page_size = 2
     if "prev_start" not in st.session_state:
         st.session_state["prev_start"] = 0
     if st.session_state["prev_start"] >= len(all_imgs):
         st.session_state["prev_start"] = 0
     start = st.session_state["prev_start"]
+    max_start = max(len(all_imgs) - page_size, 0)
 
-    nav_prev, nav_info, nav_next = st.columns([1, 3, 1])
-    with nav_prev:
-        if st.button("Prev", disabled=(start <= 0), key="prev_btn"):
-            st.session_state["prev_start"] = max(0, start - n)
-            st.rerun()
-    with nav_info:
-        end_idx = min(start + n, len(all_imgs))
-        st.markdown(f'<p style="text-align:center;margin:0;padding:0.3rem 0;color:#6B7280;">'
-                    f'{start + 1}–{end_idx} of {len(all_imgs)}</p>', unsafe_allow_html=True)
-    with nav_next:
-        if st.button("Next", disabled=(start + n >= len(all_imgs)), key="next_btn"):
-            st.session_state["prev_start"] = min(start + n, max(len(all_imgs) - n, 0))
-            st.rerun()
+    def _goto(new_start: int):
+        st.session_state["prev_start"] = max(0, min(new_start, max_start))
+        st.rerun()
+
+    with head[2]:
+        if st.button("⏮", key="prev_first", help="First page",
+                     use_container_width=True, disabled=start <= 0):
+            _goto(0)
+    with head[3]:
+        if st.button("◀", key="prev_btn", help="Previous page",
+                     use_container_width=True, disabled=start <= 0):
+            _goto(start - page_size)
+
+    end_idx = min(start + page_size, len(all_imgs))
+    with head[4]:
+        st.caption(f"{start + 1}–{end_idx} of {len(all_imgs):,} images")
+
+    with head[5]:
+        if st.button("▶", key="next_btn", help="Next page",
+                     use_container_width=True, disabled=start >= max_start):
+            _goto(start + page_size)
+    with head[6]:
+        if st.button("⏭", key="prev_last", help="Last page",
+                     use_container_width=True, disabled=start >= max_start):
+            _goto(max_start)
+
+    # Jump box: keep its value in step with the visible page without
+    # clobbering what the user is typing (Streamlit forbids writing widget
+    # state after the widget exists, so a pending key bridges the rerun).
+    pending_jump = st.session_state.pop("_prev_jump_pending", None)
+    if pending_jump is not None:
+        st.session_state["prev_jump"] = pending_jump
+        st.session_state["_prev_jump_shown"] = pending_jump
+    elif st.session_state.get("_prev_jump_shown") != start + 1:
+        st.session_state["prev_jump"] = start + 1
+        st.session_state["_prev_jump_shown"] = start + 1
+    with head[7]:
+        jump = st.number_input(
+            "Image #", min_value=1, max_value=len(all_imgs),
+            value=start + 1, key="prev_jump",
+            label_visibility="collapsed", help="Jump to an image number",
+        )
+    if jump is not None and int(jump) != start + 1:
+        target = max(0, (int(jump) - 1) // page_size * page_size)
+        st.session_state["prev_start"] = target
+        st.session_state["_prev_jump_pending"] = target + 1
+        st.rerun()
 
     # Load COCO annotations if available.  Search the split directory, a
     # parent folder, and an annotations/ sibling so uploads with the usual
@@ -120,64 +160,77 @@ def _render_preview():
         yolo_label_dir = ""
 
     from PIL import Image, ImageDraw
-    selected = all_imgs[start:start + n]
 
-    total_boxes = 0
-    for row in range(0, len(selected), MAX_PREVIEW_COLS):
-        cols = st.columns(MAX_PREVIEW_COLS)
-        for j, col in enumerate(cols):
-            idx = row + j
-            if idx >= len(selected):
-                break
-            img_name = selected[idx]
-            with col:
-                try:
-                    img = Image.open(os.path.join(preview_path, img_name)).convert("RGB")
-                    w_img, h_img = img.size
-                    if bbox:
-                        draw = ImageDraw.Draw(img)
-                        drawn = False
-                        if ann_data and img_name in img_id_map:
-                            for a in ann_by_img.get(img_id_map[img_name], []):
-                                b = a.get("bbox", [])
-                                if len(b) == 4:
-                                    x, y, w, h = b
-                                    color = BBOX_COLORS_RGB[a.get("category_id", 0) % len(BBOX_COLORS_RGB)]
-                                    draw.rectangle([x, y, x+w, y+h], outline=color, width=2)
-                                    total_boxes += 1
-                                    drawn = True
-                        if not drawn and yolo_label_dir and not ann_data:
-                            lbl_name = os.path.splitext(img_name)[0] + ".txt"
-                            lbl_path = os.path.join(yolo_label_dir, lbl_name)
-                            if not os.path.isfile(lbl_path):
-                                lbl_path = os.path.join(
-                                    yolo_label_dir,
-                                    os.path.splitext(os.path.basename(img_name))[0] + ".txt",
-                                )
-                            if os.path.isfile(lbl_path):
-                                with open(lbl_path) as lf:
-                                    for line in lf:
-                                        parts = line.strip().split()
-                                        if len(parts) >= 5:
-                                            cls_id = int(parts[0])
-                                            cx, cy, bw, bh = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
-                                            x1 = int((cx - bw / 2) * w_img)
-                                            y1 = int((cy - bh / 2) * h_img)
-                                            x2 = int((cx + bw / 2) * w_img)
-                                            y2 = int((cy + bh / 2) * h_img)
-                                            color = BBOX_COLORS_RGB[cls_id % len(BBOX_COLORS_RGB)]
-                                            draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
-                                            total_boxes += 1
-                    st.image(img, caption=f"{img_name[:15]} {w_img}x{h_img}", use_container_width=True)
-                except Exception as e:
-                    st.error(str(e)[:40])
+    def _label_path(img_name: str) -> str:
+        if not yolo_label_dir:
+            return ""
+        lbl = os.path.join(
+            yolo_label_dir, os.path.splitext(img_name)[0] + ".txt"
+        )
+        if os.path.isfile(lbl):
+            return lbl
+        lbl = os.path.join(
+            yolo_label_dir,
+            os.path.splitext(os.path.basename(img_name))[0] + ".txt",
+        )
+        return lbl if os.path.isfile(lbl) else ""
 
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.metric("Images", len(all_imgs))
-    with m2:
-        ann_count = len(ann_data.get("annotations", [])) if ann_data else total_boxes
-        st.metric("Annotations", ann_count)
-    with m3:
-        cat_count = len(cat_map) if cat_map else "—"
-        st.metric("Categories", cat_count)
+    def _boxes_for(img_name: str, w_img: int, h_img: int) -> list:
+        """Boxes for one image in original coordinates: (x1, y1, x2, y2, color)."""
+        boxes = []
+        if ann_data and img_name in img_id_map:
+            for a in ann_by_img.get(img_id_map[img_name], []):
+                b = a.get("bbox", [])
+                if len(b) == 4:
+                    x, y, w, h = b
+                    color = BBOX_COLORS_RGB[
+                        a.get("category_id", 0) % len(BBOX_COLORS_RGB)
+                    ]
+                    boxes.append((x, y, x + w, y + h, color))
+        elif yolo_label_dir and not ann_data:
+            lbl = _label_path(img_name)
+            if lbl:
+                with open(lbl) as lf:
+                    for line in lf:
+                        parts = line.strip().split()
+                        if len(parts) >= 5:
+                            cls_id = int(parts[0])
+                            cx, cy = float(parts[1]), float(parts[2])
+                            bw, bh = float(parts[3]), float(parts[4])
+                            x1 = (cx - bw / 2) * w_img
+                            y1 = (cy - bh / 2) * h_img
+                            x2 = (cx + bw / 2) * w_img
+                            y2 = (cy + bh / 2) * h_img
+                            color = BBOX_COLORS_RGB[
+                                cls_id % len(BBOX_COLORS_RGB)
+                            ]
+                            boxes.append((x1, y1, x2, y2, color))
+        return boxes
+
+    selected = all_imgs[start:end_idx]
+    cols = st.columns(2)
+    for idx, col in enumerate(cols):
+        if idx >= len(selected):
+            break
+        img_name = selected[idx]
+        with col:
+            try:
+                img = Image.open(
+                    os.path.join(preview_path, img_name)
+                ).convert("RGB")
+                w_img, h_img = img.size
+                boxes = _boxes_for(img_name, w_img, h_img)
+                if boxes and bbox:
+                    draw = ImageDraw.Draw(img)
+                    for x1, y1, x2, y2, color in boxes:
+                        draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
+                thumb = make_thumbnail(img, (480, 360))
+                caption = f"{img_name[:18]} · {w_img}×{h_img}"
+                if boxes:
+                    caption += (
+                        f" · {len(boxes)} box" if len(boxes) == 1
+                        else f" · {len(boxes)} boxes"
+                    )
+                render_fixed_image(thumb, caption, height=360)
+            except Exception as e:
+                st.error(str(e)[:40])

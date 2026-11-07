@@ -191,6 +191,7 @@ def save_project_state():
         "dataset_classes", "dataset_id", "dataset_output_path",
         "train_ann_path", "val_ann_path", "detected_format",
         "class_file", "resume_path", "training_status", "exported_files",
+        "download_output_dir",
         "infer_model_arch", "infer_conf", "infer_nms", "infer_img_size",
         "infer_device", "selected_solution",
     )))
@@ -447,7 +448,7 @@ def render_project_selector():
 def render_project_manager_page():
     """Full project management page — create, switch, delete, manage projects."""
     from flashstudio.components.styles import render_page_header
-    render_page_header("", "Projects", "Create, switch, duplicate, or delete projects")
+    render_page_header("", "Projects")
 
     index = _load_index()
     projects = index.get("projects", [])

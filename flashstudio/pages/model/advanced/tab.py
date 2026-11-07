@@ -57,7 +57,7 @@ def _tab_adv():
                     preview += f" ... (+{len(names_list) - 5})"
                 st.caption(f"Classes ({nc}): {preview}")
             else:
-                st.caption("Classes: not set — go to Data → Upload")
+                st.caption("Classes: not set — go to Data → Load data → Upload")
 
             st.text_input("Class file (.txt)", placeholder="Auto-generated from dataset classes",
                           key="class_file", help="Leave empty to auto-generate from dataset classes")

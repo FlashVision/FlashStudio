@@ -150,8 +150,15 @@ def dataset_quality(images_dir: str, ann_path: str = "", labels_dir: str = "") -
 
 
 def _render_quality():
-    st.caption("Check class balance, empty images, duplicates, corrupt files, and box sizes before training.")
-    split = st.radio("Split", ["Train", "Validation"], horizontal=True, key="quality_split")
+    # One header row: split · run report · summary stats.
+    head = st.columns([1.7, 1.6, 4.5], gap="small")
+    with head[0]:
+        split = st.radio(
+            "Split", ["Train", "Validation"], horizontal=True,
+            key="quality_split", label_visibility="collapsed",
+            help="Split to analyze",
+        )
+
     img_key = "train_img_path" if split == "Train" else "val_img_path"
     label_key = "train_label_path" if split == "Train" else "val_label_path"
     img_dir = st.session_state.get(img_key, "")
@@ -171,49 +178,54 @@ def _render_quality():
         return
 
     report_key = f"_quality_report_{split.lower()}"
-    if st.button("Run quality report", type="primary", key="quality_run"):
+
+    with head[1]:
+        run = st.button(
+            "Run quality report", type="primary", key="quality_run",
+            use_container_width=True,
+            help="Check images and annotations for problems",
+        )
+    if run:
         with st.spinner("Checking images and annotations..."):
             try:
-                st.session_state[report_key] = dataset_quality(img_dir, ann_path, labels_dir)
+                st.session_state[report_key] = dataset_quality(
+                    img_dir, ann_path, labels_dir
+                )
             except Exception as exc:
                 st.error(f"Quality report failed: {exc}")
                 return
 
     report = st.session_state.get(report_key)
+
+    with head[2]:
+        if report:
+            st.caption(
+                f"**{report['images']:,}** images · "
+                f"**{report['annotations']:,}** annotations · "
+                f"**{len(report['classes'])}** classes · "
+                f"**{len(report['empty_images'])}** empty · "
+                f"**{len(report['corrupt_images'])}** corrupt · "
+                f"**{report.get('duplicate_images', 0)}** duplicates"
+            )
+
     if not report:
         return
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1:
-        st.metric("Images", report["images"])
-    with c2:
-        st.metric("Annotations", report["annotations"])
-    with c3:
-        st.metric("Classes", len(report["classes"]))
-    with c4:
-        st.metric("Empty", len(report["empty_images"]))
-    with c5:
-        st.metric("Corrupt", len(report["corrupt_images"]))
-    with c6:
-        st.metric("Duplicates", report.get("duplicate_images", 0))
-
     if report["classes"]:
-        st.markdown("#### Class distribution")
-        st.bar_chart(report["classes"])
-        if report.get("imbalance", 0) > 5:
-            st.warning(f"Class imbalance is high: max/min ratio ≈ {report['imbalance']:.1f}×.")
-        else:
-            st.caption(f"Class imbalance ratio: {report.get('imbalance', 0):.1f}×")
+        imbalance = report.get("imbalance", 0)
+        st.caption(f"Class distribution · imbalance **{imbalance:.1f}×**")
+        st.bar_chart(report["classes"], height=280)
+        if imbalance > 5:
+            st.warning(
+                f"Class imbalance is high: max/min ratio ≈ {imbalance:.1f}×."
+            )
 
-    s1, s2, s3, s4 = st.columns(4)
-    with s1:
-        st.metric("Tiny boxes", report["tiny_boxes"])
-    with s2:
-        st.metric("Small boxes", report["small_boxes"])
-    with s3:
-        st.metric("Medium boxes", report["medium_boxes"])
-    with s4:
-        st.metric("Large boxes", report["large_boxes"])
+    st.caption(
+        f"Box sizes — tiny **{report['tiny_boxes']:,}** · "
+        f"small **{report['small_boxes']:,}** · "
+        f"medium **{report['medium_boxes']:,}** · "
+        f"large **{report['large_boxes']:,}**"
+    )
 
     if report["empty_images"]:
         with st.expander(f"Images without annotations ({len(report['empty_images'])})"):

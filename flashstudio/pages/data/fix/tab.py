@@ -59,9 +59,15 @@ def _issue_rows(report: dict) -> list:
 
 
 def _render_fix():
-    st.caption("Scan annotations, repair boxes and class IDs, and review the result before training.")
+    # One header row: split · scan · status.
+    head = st.columns([1.7, 1.0, 4.5], gap="small")
+    with head[0]:
+        split = st.radio(
+            "Split", ["Train", "Validation"], horizontal=True,
+            key="fix_split", label_visibility="collapsed",
+            help="Split to scan and repair",
+        )
 
-    split = st.radio("Split", ["Train", "Validation"], horizontal=True, key="fix_split")
     img_key = "train_img_path" if split == "Train" else "val_img_path"
     label_key = "train_label_path" if split == "Train" else "val_label_path"
     img_dir = st.session_state.get(img_key, "")
@@ -81,19 +87,19 @@ def _render_fix():
 
     if not fmt:
         st.info("No COCO JSON or YOLO labels found for this split.")
-        st.caption(f"Images: `{img_dir}`")
         return
 
-    st.caption(f"Images: `{img_dir}`")
-    if fmt == "COCO":
-        st.caption(f"Annotations: `{ann_path}`")
-    else:
-        st.caption(f"Labels: `{labels_dir}`")
-
     report_key = f"_fix_report_{split.lower()}"
-    scan_col, note_col = st.columns([1, 4])
-    with scan_col:
-        if st.button("Scan", type="primary", key="fix_scan_btn", use_container_width=True):
+
+    with head[1]:
+        if st.button(
+            "Scan", type="primary", key="fix_scan_btn",
+            use_container_width=True,
+            help=(
+                "Check annotations for issues. A `.bak` backup is "
+                "created before any in-place fix."
+            ),
+        ):
             try:
                 if fmt == "COCO":
                     report = scan_coco(ann_path, img_dir)
@@ -106,49 +112,48 @@ def _render_fix():
             except Exception as exc:
                 st.error(f"Scan failed: {exc}")
                 return
-    with note_col:
-        st.caption("A `.bak` backup is created before any in-place fix.")
 
     report = st.session_state.get(report_key)
+
+    with head[2]:
+        if report:
+            issues = report.get("issues", 0)
+            if fmt == "COCO":
+                stats = (
+                    f"**{report.get('images', 0):,}** images · "
+                    f"**{report.get('annotations', 0):,}** annotations · "
+                    f"**{report.get('categories', 0)}** categories"
+                )
+            else:
+                stats = (
+                    f"**{report.get('files', 0):,}** label files · "
+                    f"**{report.get('boxes', 0):,}** boxes"
+                )
+            if issues:
+                st.caption(f"⚠ **{issues}** issue(s) found — {stats}")
+            else:
+                st.caption(f"✓ No issues — {stats}")
+
+    with st.expander("File locations", expanded=False):
+        st.caption(f"Images: `{img_dir}`")
+        if fmt == "COCO":
+            st.caption(f"Annotations: `{ann_path}`")
+        else:
+            st.caption(f"Labels: `{labels_dir}`")
+
     if not report:
         return
 
-    if fmt == "COCO":
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        with c1:
-            st.metric("Images", report.get("images", 0))
-        with c2:
-            st.metric("Annotations", report.get("annotations", 0))
-        with c3:
-            st.metric("Categories", report.get("categories", 0))
-        with c4:
-            st.metric("Missing files", len(report.get("missing_images", [])))
-        with c5:
-            st.metric("Bad boxes", len(report.get("invalid_boxes", [])) + len(report.get("zero_area", [])))
-        with c6:
-            st.metric("Issues", report.get("issues", 0))
-    else:
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("Label files", report.get("files", 0))
-        with c2:
-            st.metric("Boxes", report.get("boxes", 0))
-        with c3:
-            st.metric("Invalid lines", len(report.get("invalid_lines", [])))
-        with c4:
-            st.metric("Issues", report.get("issues", 0))
-
     if report.get("issues", 0):
-        st.warning(f"Found {report['issues']} annotation issue(s).")
         rows = _issue_rows(report)
         if rows:
-            st.dataframe(rows[:100], use_container_width=True, hide_index=True, height=220)
-    else:
-        st.success("No annotation issues detected.")
+            st.dataframe(rows[:100], use_container_width=True,
+                         hide_index=True, height=220)
 
-    action_cols = st.columns([1, 1, 1, 3])
+    action_cols = st.columns([1, 1, 1, 3], gap="small")
     with action_cols[0]:
-        if st.button("Fix in place", type="primary", key="fix_apply_btn", use_container_width=True):
+        if st.button("Fix in place", type="primary", key="fix_apply_btn",
+                     use_container_width=True):
             try:
                 if fmt == "COCO":
                     result = fix_coco(ann_path, img_dir, backup=True)
@@ -175,7 +180,8 @@ def _render_fix():
 
     with action_cols[1]:
         if fmt == "COCO":
-            if st.button("Prepare download", key="fix_download_btn", use_container_width=True):
+            if st.button("Prepare download", key="fix_download_btn",
+                         use_container_width=True):
                 try:
                     tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
                     tmp.close()
@@ -186,10 +192,11 @@ def _render_fix():
                 except Exception as exc:
                     st.error(f"Could not prepare download: {exc}")
         else:
-            st.caption("YOLO fixes are applied in place.")
+            st.caption("YOLO fixes are in place.")
 
     with action_cols[2]:
-        if st.button("Reload classes", key="fix_reload_classes", use_container_width=True):
+        if st.button("Reload classes", key="fix_reload_classes",
+                     use_container_width=True):
             if fmt == "COCO":
                 cats = json.load(open(ann_path, encoding="utf-8")).get("categories", [])
                 names = [c.get("name", f"class_{c.get('id')}") for c in sorted(cats, key=lambda c: c.get("id", 0))]
@@ -200,12 +207,13 @@ def _render_fix():
             st.success(f"Loaded {len(names)} classes")
             st.rerun()
 
-    data = st.session_state.get("_fixed_coco_download")
-    if fmt == "COCO" and data:
-        st.download_button(
-            "Download corrected COCO",
-            data,
-            file_name=st.session_state.get("_fixed_coco_name", "annotations_fixed.json"),
-            mime="application/json",
-            use_container_width=False,
-        )
+    with action_cols[3]:
+        data = st.session_state.get("_fixed_coco_download")
+        if fmt == "COCO" and data:
+            st.download_button(
+                "Download corrected COCO",
+                data,
+                file_name=st.session_state.get("_fixed_coco_name", "annotations_fixed.json"),
+                mime="application/json",
+                use_container_width=False,
+            )

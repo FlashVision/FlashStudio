@@ -40,6 +40,11 @@ def inject_custom_css():
         --fs-radius: 16px;
         --fs-radius-sm: 10px;
         --fs-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .04);
+        /* Type scale — every UI font size uses one of these four steps. */
+        --fs-text-xs: .7rem;
+        --fs-text-sm: .78rem;
+        --fs-text-md: .86rem;
+        --fs-text-lg: .95rem;
     }
 
     html, body, .stApp, [data-testid="stAppViewContainer"] {
@@ -54,7 +59,9 @@ def inject_custom_css():
             var(--fs-bg);
     }
 
-    .stApp, section[data-testid="stMain"] { overflow: visible !important; height: auto !important; }
+    /* Keep Streamlit's own scroll container intact: forcing stMain to
+       ``overflow: visible`` makes everything below the fold unreachable on
+       short screens. */
 
     section[data-testid="stMain"] .block-container {
         padding: 3.6rem 2rem 2.6rem !important;
@@ -92,20 +99,20 @@ def inject_custom_css():
         width: 42px; height: 42px; border-radius: 12px;
         display: grid; place-items: center; flex: 0 0 42px;
         background: linear-gradient(135deg, #6D28D9, #A78BFA);
-        color: #fff; font-weight: 800; font-size: .95rem;
+        color: #fff; font-weight: 800; font-size: var(--fs-text-lg);
         box-shadow: 0 6px 16px rgba(109, 40, 217, .25);
     }
     .fs-brand-name { font-weight: 800; font-size: 1.02rem; line-height: 1.1; color: var(--fs-text); }
-    .fs-brand-tag { font-size: .72rem; color: var(--fs-muted); margin-top: .12rem; }
+    .fs-brand-tag { font-size: var(--fs-text-sm); color: var(--fs-muted); margin-top: .12rem; }
 
     .fs-nav-label {
-        font-size: .67rem; font-weight: 700; letter-spacing: .11em;
+        font-size: var(--fs-text-xs); font-weight: 700; letter-spacing: .11em;
         text-transform: uppercase; color: var(--fs-faint);
         padding: .7rem .5rem .28rem;
     }
 
     section[data-testid="stSidebar"] .stButton > button {
-        font-size: .9rem !important;
+        font-size: var(--fs-text-md) !important;
         padding: .5rem .7rem !important;
         border-radius: 10px !important;
         text-align: left !important;
@@ -137,9 +144,9 @@ def inject_custom_css():
         padding: .75rem .8rem;
         margin: .2rem 0 .45rem;
     }
-    .fs-project-kicker { font-size: .64rem; font-weight: 700; letter-spacing: .1em; color: #8B5CF6; text-transform: uppercase; }
-    .fs-project-name { font-size: .95rem; font-weight: 700; color: var(--fs-text); margin-top: .15rem; }
-    .fs-project-meta { font-size: .72rem; color: var(--fs-muted); margin-top: .1rem; }
+    .fs-project-kicker { font-size: var(--fs-text-xs); font-weight: 700; letter-spacing: .1em; color: #8B5CF6; text-transform: uppercase; }
+    .fs-project-name { font-size: var(--fs-text-lg); font-weight: 700; color: var(--fs-text); margin-top: .15rem; }
+    .fs-project-meta { font-size: var(--fs-text-sm); color: var(--fs-muted); margin-top: .1rem; }
 
     .fs-side-progress {
         display: flex; align-items: center; gap: .55rem;
@@ -147,14 +154,14 @@ def inject_custom_css():
     }
     .fs-side-bar { flex: 1; height: 5px; border-radius: 999px; background: #ECEAF4; overflow: hidden; }
     .fs-side-bar > span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #6D28D9, #A78BFA); }
-    .fs-side-step { font-size: .7rem; color: var(--fs-muted); font-weight: 600; white-space: nowrap; }
+    .fs-side-step { font-size: var(--fs-text-xs); color: var(--fs-muted); font-weight: 600; white-space: nowrap; }
 
     .fs-status-card {
         border: 1px solid var(--fs-border-soft);
         background: #FAFBFC;
         border-radius: 14px;
         padding: .75rem .8rem;
-        font-size: .78rem;
+        font-size: var(--fs-text-sm);
     }
     .fs-status-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .18rem 0; }
     .fs-status-row span:first-child { color: var(--fs-muted); }
@@ -171,7 +178,7 @@ def inject_custom_css():
         margin-bottom: .9rem;
     }
     .page-kicker {
-        font-size: .68rem; font-weight: 700; letter-spacing: .12em;
+        font-size: var(--fs-text-xs); font-weight: 700; letter-spacing: .12em;
         text-transform: uppercase; color: var(--fs-primary);
         display: flex; align-items: center; gap: .45rem;
     }
@@ -180,12 +187,12 @@ def inject_custom_css():
         background: linear-gradient(90deg, #6D28D9, #A78BFA);
     }
     .page-title { font-size: 1.85rem !important; font-weight: 800 !important; color: var(--fs-text) !important; margin: .18rem 0 .1rem !important; letter-spacing: -.03em; }
-    .page-subtitle { font-size: .9rem !important; color: var(--fs-muted) !important; max-width: 760px; line-height: 1.5; }
+    .page-subtitle { font-size: var(--fs-text-md) !important; color: var(--fs-muted) !important; max-width: 760px; line-height: 1.5; }
     .page-chip {
         display: inline-flex; align-items: center; gap: .4rem;
         padding: .42rem .75rem; border-radius: 999px;
         background: #fff; border: 1px solid var(--fs-border);
-        font-size: .74rem; font-weight: 600; color: var(--fs-body);
+        font-size: var(--fs-text-sm); font-weight: 600; color: var(--fs-body);
         box-shadow: var(--fs-shadow); white-space: nowrap;
     }
 
@@ -210,7 +217,7 @@ def inject_custom_css():
         min-height: 92px;
     }
     div[data-testid="stMetric"] label {
-        font-size: .7rem !important;
+        font-size: var(--fs-text-xs) !important;
         text-transform: uppercase;
         letter-spacing: .09em;
         color: var(--fs-muted) !important;
@@ -225,12 +232,12 @@ def inject_custom_css():
         letter-spacing: -.02em;
     }
     div[data-testid="stMetric"] div[data-testid="stMetricDelta"] {
-        font-size: .74rem !important; color: var(--fs-muted) !important;
+        font-size: var(--fs-text-sm) !important; color: var(--fs-muted) !important;
     }
 
     /* ── Buttons ─────────────────────────────────────────────── */
     section[data-testid="stMain"] .stButton > button {
-        font-size: .88rem !important;
+        font-size: var(--fs-text-md) !important;
         font-weight: 600 !important;
         padding: .48rem .85rem !important;
         min-height: 2.45rem !important;
@@ -269,7 +276,7 @@ def inject_custom_css():
     }
     .stTabs [data-baseweb="tab"] {
         font-weight: 600;
-        font-size: .86rem;
+        font-size: var(--fs-text-md);
         color: var(--fs-muted);
         padding: .45rem .85rem;
         border-radius: 9px;
@@ -290,12 +297,46 @@ def inject_custom_css():
         overflow: visible !important;
     }
 
+    /* ── Page-level view switcher (segmented control) ────────── */
+    section[data-testid="stMain"] div[data-testid="stButtonGroup"] {
+        background: #ECECF4;
+        padding: .28rem;
+        border-radius: 12px;
+        width: fit-content;
+        max-width: 100%;
+    }
+    section[data-testid="stMain"] div[data-testid="stButtonGroup"] > div[role="radiogroup"] {
+        gap: .3rem;
+        flex-wrap: wrap;
+    }
+    section[data-testid="stMain"] div[data-testid="stButtonGroup"] button[kind="segmented_control"],
+    section[data-testid="stMain"] div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"] {
+        font-size: var(--fs-text-md) !important;
+        font-weight: 600 !important;
+        color: var(--fs-muted) !important;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 9px !important;
+        min-height: 2.3rem !important;
+        padding: .45rem .95rem !important;
+        box-shadow: none !important;
+    }
+    section[data-testid="stMain"] div[data-testid="stButtonGroup"] button[kind="segmented_control"]:hover {
+        color: var(--fs-primary) !important;
+        background: rgba(255, 255, 255, .6) !important;
+    }
+    section[data-testid="stMain"] div[data-testid="stButtonGroup"] button[kind="segmented_controlActive"] {
+        background: #fff !important;
+        color: var(--fs-primary) !important;
+        box-shadow: 0 2px 8px rgba(17, 24, 39, .08) !important;
+    }
+
     /* ── Inputs ──────────────────────────────────────────────── */
     section[data-testid="stMain"] .stSelectbox > div > div,
     section[data-testid="stMain"] .stTextInput > div > div > input,
     section[data-testid="stMain"] .stNumberInput > div > div > input,
     section[data-testid="stMain"] .stTextArea textarea {
-        font-size: .88rem !important;
+        font-size: var(--fs-text-md) !important;
         border-radius: var(--fs-radius-sm) !important;
         border-color: var(--fs-border) !important;
         background: #fff !important;
@@ -315,7 +356,7 @@ def inject_custom_css():
     section[data-testid="stMain"] .stFileUploader label,
     section[data-testid="stMain"] .stTextArea label,
     section[data-testid="stMain"] .stMultiSelect label {
-        font-size: .8rem !important;
+        font-size: var(--fs-text-md) !important;
         font-weight: 600 !important;
         color: var(--fs-body) !important;
     }
@@ -350,15 +391,16 @@ def inject_custom_css():
     }
     [data-testid="stCode"] code, section[data-testid="stMain"] pre code {
         color: #1F2937 !important;
-        font-size: .8rem !important;
+        font-size: var(--fs-text-md) !important;
     }
 
     /* ── Headings inside pages ───────────────────────────────── */
     section[data-testid="stMain"] h1 { font-size: 1.5rem !important; margin: .15rem 0 !important; font-weight: 800; letter-spacing: -.02em; }
+    section[data-testid="stMain"] h1.page-title { font-size: 1.85rem !important; }
     section[data-testid="stMain"] h2 { font-size: 1.28rem !important; margin: .15rem 0 !important; font-weight: 700; }
     section[data-testid="stMain"] h3 { font-size: 1.08rem !important; margin: .1rem 0 !important; font-weight: 700; color: var(--fs-text); }
     section[data-testid="stMain"] h4 {
-        font-size: .82rem !important; margin: .1rem 0 .35rem !important;
+        font-size: var(--fs-text-md) !important; margin: .1rem 0 .35rem !important;
         font-weight: 700; color: var(--fs-body);
         text-transform: uppercase; letter-spacing: .07em;
     }
@@ -372,7 +414,7 @@ def inject_custom_css():
     }
     div[data-testid="stExpander"] summary {
         font-weight: 600 !important;
-        font-size: .86rem !important;
+        font-size: var(--fs-text-md) !important;
         color: var(--fs-body) !important;
         padding: .55rem .8rem !important;
     }
@@ -380,7 +422,7 @@ def inject_custom_css():
     /* ── Alerts ──────────────────────────────────────────────── */
     .stAlert {
         padding: .6rem .8rem !important;
-        font-size: .85rem !important;
+        font-size: var(--fs-text-md) !important;
         border-radius: 11px !important;
         border: 1px solid var(--fs-border) !important;
     }
@@ -391,7 +433,7 @@ def inject_custom_css():
         border: 1px solid #E5DBFF;
         border-radius: 12px;
         padding: .55rem .9rem;
-        font-size: .84rem;
+        font-size: var(--fs-text-md);
         color: #5B21B6;
         display: flex; flex-wrap: wrap; gap: .35rem .9rem;
     }
@@ -399,7 +441,7 @@ def inject_custom_css():
 
     .ds-card-stats {
         display: flex; gap: .5rem .9rem; flex-wrap: wrap;
-        font-size: .82rem; color: var(--fs-muted); line-height: 1.5;
+        font-size: var(--fs-text-md); color: var(--fs-muted); line-height: 1.5;
     }
     .ds-card-stats span { white-space: nowrap; }
     .ds-card-stats b { color: var(--fs-text); }
@@ -408,14 +450,14 @@ def inject_custom_css():
     .ds-check {
         display: inline-flex; align-items: center;
         padding: .26rem .62rem; border-radius: 999px;
-        font-size: .76rem; font-weight: 600; white-space: nowrap;
+        font-size: var(--fs-text-sm); font-weight: 600; white-space: nowrap;
     }
     .ds-ok { background: #ECFDF5; color: #047857; }
     .ds-fail { background: #FEF2F2; color: #B91C1C; }
     .ds-note { background: #FFFBEB; color: #92400E; }
     .ds-badge {
         display: inline-block; padding: .12rem .45rem; border-radius: 999px;
-        background: #ECFDF5; color: #047857; font-size: .68rem; font-weight: 700;
+        background: #ECFDF5; color: #047857; font-size: var(--fs-text-xs); font-weight: 700;
         vertical-align: middle;
     }
 
@@ -423,14 +465,20 @@ def inject_custom_css():
     .pipeline-step {
         display: inline-flex; align-items: center; gap: .3rem;
         padding: .3rem .6rem; border-radius: 999px;
-        font-size: .78rem; font-weight: 600;
+        font-size: var(--fs-text-sm); font-weight: 600;
     }
-    .pipeline-arrow { color: var(--fs-faint); font-size: .7rem; }
+    .pipeline-arrow { color: var(--fs-faint); font-size: var(--fs-text-xs); }
     .ps-done { background: #ECFDF5; color: #065F46; }
     .ps-active { background: #FEF3C7; color: #92400E; }
     .ps-pending { background: #F4F5FA; color: #9CA3AF; }
 
-    .stProgress > div > div {
+    /* Only paint the fill — styling every nested div also painted the progress
+       label and the whole track purple. */
+    .stProgress > div > div:last-child > div {
+        background: #ECEAF4 !important;
+        border-radius: 999px;
+    }
+    .stProgress > div > div:last-child > div > div {
         background: linear-gradient(90deg, #6D28D9, #A78BFA) !important;
         border-radius: 999px;
     }
@@ -447,7 +495,7 @@ def inject_custom_css():
 
     .stDownloadButton > button {
         border-radius: var(--fs-radius-sm) !important;
-        font-size: .85rem !important;
+        font-size: var(--fs-text-md) !important;
         font-weight: 600 !important;
         min-height: 2.3rem !important;
     }
@@ -457,28 +505,67 @@ def inject_custom_css():
     .app-footer {
         text-align: center;
         color: var(--fs-faint);
-        font-size: .72rem;
+        font-size: var(--fs-text-sm);
         padding: 2rem 0 .5rem;
         letter-spacing: .02em;
     }
 
-    /* Zone canvas keeps a usable viewport. */
+    /* Custom components (drawable canvases) size themselves. */
     div[data-testid="stCustomComponentV1"] {
-        min-height: 440px !important;
-        width: 670px !important;
         max-width: 100% !important;
         margin: 0 !important;
     }
     iframe[data-testid="stCustomComponentV1"] {
-        width: 670px !important;
         max-width: 100% !important;
-        height: 440px !important;
-        min-height: 440px !important;
         margin: 0 !important;
         display: block !important;
     }
 
-    section[data-testid="stMain"] .stCaption, section[data-testid="stMain"] small { font-size: .78rem !important; color: var(--fs-muted) !important; }
+    section[data-testid="stMain"] .stCaption, section[data-testid="stMain"] small { font-size: var(--fs-text-sm) !important; color: var(--fs-muted) !important; }
+
+    /* Streamlit wraps most control text in <p>/<span> with its own 14-16px
+       defaults. Force those onto the shared scale so buttons, tabs, labels,
+       captions, and markdown text match. */
+    section[data-testid="stMain"] .stMarkdown p,
+    section[data-testid="stMain"] [data-testid="stMarkdownContainer"] p {
+        font-size: var(--fs-text-md) !important;
+    }
+    section[data-testid="stMain"] div[data-testid="stMetric"] [data-testid="stMarkdownContainer"] p {
+        font-size: var(--fs-text-xs) !important;
+    }
+    section[data-testid="stMain"] div[data-testid="stMetric"] div[data-testid="stMetricValue"] p {
+        font-size: 1.35rem !important;
+        font-weight: 800;
+        letter-spacing: -.02em;
+    }
+    section[data-testid="stMain"] div[data-testid="stMetric"] div[data-testid="stMetricDelta"] p {
+        font-size: var(--fs-text-sm) !important;
+    }
+    section[data-testid="stMain"] .stCaption p,
+    section[data-testid="stMain"] [data-testid="stCaptionContainer"] p {
+        font-size: var(--fs-text-sm) !important;
+    }
+    section[data-testid="stMain"] .stCaption code,
+    section[data-testid="stMain"] [data-testid="stCaptionContainer"] code,
+    section[data-testid="stMain"] [data-testid="stMarkdownContainer"] p code {
+        font-size: var(--fs-text-sm) !important;
+    }
+    section[data-testid="stMain"] [data-baseweb="tab"] p { font-size: var(--fs-text-md) !important; }
+    section[data-testid="stMain"] button span,
+    section[data-testid="stMain"] button div,
+    section[data-testid="stSidebar"] button span,
+    section[data-testid="stSidebar"] button div,
+    section[data-testid="stMain"] button p,
+    section[data-testid="stSidebar"] button p { font-size: inherit !important; }
+    section[data-testid="stMain"] div[data-testid="stExpander"] summary div,
+    section[data-testid="stMain"] div[data-testid="stExpander"] summary p {
+        font-size: inherit !important;
+    }
+    section[data-testid="stMain"] label p { font-size: inherit !important; }
+    section[data-testid="stMain"] [data-testid="stFileUploader"] p,
+    section[data-testid="stMain"] [data-testid="stFileUploader"] small {
+        font-size: var(--fs-text-md) !important;
+    }
 
     /* ── Workflow footer ─────────────────────────────────────── */
     .workflow-footer {
@@ -490,18 +577,93 @@ def inject_custom_css():
         margin-top: 1.6rem;
         border-top: 1px solid var(--fs-border);
     }
-    .workflow-step { font-size: .75rem; color: var(--fs-muted); font-weight: 600; }
-    .workflow-hint { font-size: .72rem; color: var(--fs-faint); }
+    .workflow-step { font-size: var(--fs-text-sm); color: var(--fs-muted); font-weight: 600; }
+    .workflow-hint { font-size: var(--fs-text-sm); color: var(--fs-faint); }
 
     .step-indicator { display: flex; gap: .35rem; padding: .2rem 0 .6rem; }
     .step-item { flex: 1; text-align: center; }
-    .step-icon { font-size: .85rem; display: block; color: var(--fs-faint); }
-    .step-label { font-size: .74rem; font-weight: 600; color: var(--fs-muted); }
+    .step-icon { font-size: var(--fs-text-md); display: block; color: var(--fs-faint); }
+    .step-label { font-size: var(--fs-text-sm); font-weight: 600; color: var(--fs-muted); }
     .step-bar { height: 3px; border-radius: 999px; margin-top: .2rem; background: #E9E7F1; }
     .step-active .step-label { color: var(--fs-primary); }
     .step-active .step-bar { background: var(--fs-primary); }
     .step-done .step-bar { background: #10B981; }
     .step-done .step-label { color: var(--fs-body); }
+
+    /* ── Responsive layout ───────────────────────────────────── */
+    @media (max-width: 1200px) {
+        section[data-testid="stMain"] .block-container {
+            padding: 2.8rem 1.1rem 2rem !important;
+        }
+        /* Metric / action rows: two per row instead of crushing 4-7 cards. */
+        section[data-testid="stMain"] div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:nth-child(4)) {
+            flex-wrap: wrap !important;
+            row-gap: .55rem !important;
+        }
+        section[data-testid="stMain"] div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:nth-child(4)) > div[data-testid="stColumn"] {
+            /* Two per row: subtract half of Streamlit's 16px column gap so the
+               items actually fit on one line instead of each taking a row. */
+            flex: 1 1 calc(50% - .5rem) !important;
+            min-width: calc(50% - .5rem) !important;
+            width: auto !important;
+        }
+    }
+
+    @media (max-width: 1024px) {
+        section[data-testid="stSidebar"],
+        section[data-testid="stSidebar"] > div {
+            width: 248px !important;
+        }
+        section[data-testid="stMain"] h1.page-title { font-size: 1.55rem !important; }
+    }
+
+    @media (max-width: 900px) {
+        .page-header { align-items: flex-start; flex-wrap: wrap; }
+        .page-chip { margin-top: .2rem; }
+        /* Main content columns (setup + launch, side-by-side panels) stack. */
+        section[data-testid="stMain"] div[data-testid="stHorizontalBlock"]:not(:has(> div[data-testid="stColumn"]:nth-child(3))) {
+            flex-wrap: wrap !important;
+        }
+        section[data-testid="stMain"] div[data-testid="stHorizontalBlock"]:not(:has(> div[data-testid="stColumn"]:nth-child(3))) > div[data-testid="stColumn"] {
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+            width: 100% !important;
+        }
+    }
+
+    @media (max-width: 640px) {
+        section[data-testid="stMain"] .block-container {
+            padding: 2.4rem .7rem 1.5rem !important;
+        }
+        section[data-testid="stMain"] h1.page-title { font-size: 1.35rem !important; }
+        .page-subtitle { font-size: var(--fs-text-md) !important; }
+        .page-header { gap: .4rem; padding-bottom: .6rem; }
+        /* Everything stacks once space is really tight. */
+        section[data-testid="stMain"] div[data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+        }
+        section[data-testid="stMain"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+        section[data-testid="stMain"] div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"]:nth-child(4)) > div[data-testid="stColumn"] {
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+            width: 100% !important;
+        }
+        .stTabs [data-baseweb="tab-list"] { width: 100% !important; }
+        .stTabs [data-baseweb="tab"] { flex: 1 1 auto; justify-content: center; }
+        section[data-testid="stMain"] div[data-testid="stButtonGroup"],
+        section[data-testid="stMain"] div[data-testid="stButtonGroup"] > div[role="radiogroup"] {
+            width: 100% !important;
+        }
+        section[data-testid="stMain"] div[data-testid="stButtonGroup"] button {
+            flex: 1 1 auto;
+            justify-content: center;
+        }
+        .ds-card-stats span { white-space: normal; }
+        div[data-testid="stMetric"] { min-height: 72px !important; }
+        div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+            font-size: 1.15rem !important;
+        }
+    }
 
     /* streamlit-autorefresh is an invisible timer component; without this
        rule its iframe reserves a large blank area in some Streamlit versions. */

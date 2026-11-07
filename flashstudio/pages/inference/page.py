@@ -3,7 +3,7 @@
 import streamlit as st
 from flashstudio.components.styles import render_page_header
 from flashstudio.pages.inference._common import (
-    INFER_FAMILIES, INFER_NOTES, SOLUTIONS,
+    INFER_FAMILIES, SOLUTIONS,
 )
 from flashstudio.pages.inference.run.detection import _resolve_weights_path
 
@@ -42,7 +42,7 @@ def render_inference_page():
     from flashstudio.pages.inference.run.tab import _tab_run
     from flashstudio.pages.inference.run.live import _render_live_tab
 
-    render_page_header("", "Inference", "Choose a framework, add input, run detection")
+    render_page_header("", "Inference")
     show_flashes()
 
     if "infer_family" not in st.session_state:
@@ -68,7 +68,6 @@ def render_inference_page():
         st.session_state["weight_source"] = "Training output"
         st.session_state["_infer_tab_next"] = "Model"
     st.session_state["_infer_family_last"] = family
-    st.caption(INFER_NOTES.get(family, ""))
     from flashstudio.components.dependencies import render_dependency_hint
 
     render_dependency_hint(
@@ -130,11 +129,6 @@ def render_inference_page():
             ),
         )
         if st.session_state.get("_infer_run_mode") == "Live":
-            if st.session_state.get("infer_input_type") != "RTSP":
-                st.caption(
-                    "Live streams from its own source below; the Data tab input "
-                    "is used by Batch mode."
-                )
             _render_live_tab()
         else:
             _tab_run()

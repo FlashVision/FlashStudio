@@ -43,15 +43,10 @@ def render_navigation(steps: list, current_step: int):
                 st.rerun()
 
     with mid:
-        hint = (
-            f"Continue to {next_step['label']}"
-            if next_step else "You have reached the end of the workflow."
-        )
         st.markdown(
             f'<div style="text-align:center;padding-top:.25rem;">'
             f'<div class="workflow-step">Step {current_step + 1} of {total}'
             f' · {steps[current_step]["label"]}</div>'
-            f'<div class="workflow-hint">{hint}</div>'
             f'</div>',
             unsafe_allow_html=True,
         )

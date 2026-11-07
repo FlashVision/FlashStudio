@@ -7,6 +7,35 @@ from flashstudio.utils.device import has_cuda
 from flashstudio.pages.training._common import _get_save_dir
 
 
+def _other_active_runs():
+    """Return live training runs in the workspace other than the active one."""
+    from flashstudio.pages.training.processes import running_trainer_manifests
+
+    save_root = os.path.abspath(_get_save_dir())
+    current_run = os.path.abspath(
+        str(st.session_state.get("active_run_path") or "")
+    )
+    found = []
+    try:
+        manifests = running_trainer_manifests()
+    except Exception:
+        return found
+    for manifest, pids in manifests.items():
+        run_dir = os.path.dirname(manifest)
+        try:
+            inside = os.path.commonpath([manifest, save_root]) == save_root
+        except ValueError:
+            inside = False
+        if inside and run_dir != current_run:
+            found.append({
+                "name": os.path.basename(run_dir),
+                "path": run_dir,
+                "pids": pids,
+            })
+    found.sort(key=lambda run: run["name"])
+    return found
+
+
 def _run_preflight_checks() -> list:
     """Run pre-flight validation checks before training. Returns list of (label, ok, msg)."""
     checks = []
@@ -124,5 +153,16 @@ def _run_preflight_checks() -> list:
             checks.append(("Disk", False, f"Only {free_gb:.1f} GB free"))
     except (OSError, AttributeError):
         checks.append(("Disk", True, ""))
+
+    # Never launch a second run while another run is still training. Without
+    # this, clicking Start on a new run leaves two trainers competing for the
+    # same CPU/GPU.
+    active_others = _other_active_runs()
+    if active_others:
+        other = active_others[0]
+        checks.append((
+            "Other run active", False,
+            f"{other['name']} (PID {other['pids'][0]}) — stop it before starting another run",
+        ))
 
     return checks

@@ -14,7 +14,7 @@ def _render_curves(history, run_dir):
     map_curve_img = os.path.join(plots_dir, "mAP_curve.png")
 
     if os.path.isfile(training_curves_img) or os.path.isfile(map_curve_img):
-        st.caption("FlashDet Generated Plots")
+        st.caption("FlashDet-generated plots")
         cc1, cc2 = st.columns(2)
         if os.path.isfile(training_curves_img):
             with cc1:
@@ -47,14 +47,14 @@ def _render_curves(history, run_dir):
 
     fig.add_trace(
         go.Scatter(x=epochs_for_loss, y=losses, mode="lines+markers",
-                   name="Train Loss", line=dict(color="#7C3AED", width=2), marker=dict(size=4)),
+                   name="Training Loss", line=dict(color="#7C3AED", width=2), marker=dict(size=4)),
         row=1, col=1,
     )
     if history.get("val_loss"):
         ve = history.get("val_epochs", list(range(1, len(history["val_loss"]) + 1)))
         fig.add_trace(
             go.Scatter(x=ve, y=history["val_loss"], mode="lines+markers",
-                       name="Val Loss", line=dict(color="#F59E0B", width=2), marker=dict(size=4)),
+                       name="Validation Loss", line=dict(color="#F59E0B", width=2), marker=dict(size=4)),
             row=1, col=1,
         )
 

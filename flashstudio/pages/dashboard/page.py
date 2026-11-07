@@ -8,7 +8,7 @@ def render_dashboard():
     from flashstudio.components.project_manager import get_active_project, get_project_stats
     from flashstudio.utils import show_flashes
 
-    render_page_header("", "Dashboard", "Project overview and recent activity")
+    render_page_header("", "Dashboard")
     show_flashes()
 
     project = get_active_project()

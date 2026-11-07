@@ -37,7 +37,7 @@ def _tab_run():
         st.metric("Input", st.session_state.get("infer_input_type", "Images"))
     with m3:
         sol_name = st.session_state.get("selected_solution", "Detection")
-        sol_display = "Detect" if "Detection Only" in sol_name else sol_name[:12]
+        sol_display = "Detection" if "Detection Only" in sol_name else sol_name.split(" (")[0]
         st.metric("Solution", sol_display)
     with m4:
         device_label = st.session_state.get("infer_device", "cpu").split(" ")[0]
@@ -88,7 +88,6 @@ def _tab_run():
             )
         with rc2:
             st.checkbox("Per-frame details", False, key="show_per_frame")
-            st.caption("Runs with the selected model, runtime, and solution.")
 
         if run:
             if input_type == "Images":
@@ -201,10 +200,7 @@ def _confidence(row) -> float:
 def _render_active_learning(results):
     """Export uncertain detections for annotation review."""
     with st.expander("Active learning — review low-confidence detections"):
-        st.caption(
-            "Pick a confidence band. Detections inside it are exported with their "
-            "images so you can correct annotations and retrain."
-        )
+        st.caption("Exports detections in this band with their images.")
         c1, c2, c3 = st.columns([2, 2, 1])
         with c1:
             low = st.slider("Low confidence", 0.0, 1.0, 0.15, 0.01, key="al_low")

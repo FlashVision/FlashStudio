@@ -23,32 +23,51 @@ def _signal_process_group(pid: int, sig: int):
 def _stop_training():
     """Stop the training subprocess by killing its process tree."""
     from flashstudio.utils import flash
+    from flashstudio.pages.training.processes import (
+        clear_pid_file, find_run_training_pids,
+    )
 
     proc = st.session_state.get("_training_process")
     pid = _process_pid()
+    run_dir = st.session_state.get("active_run_path") or ""
+    stopped = []
+    errors = []
+
+    def _terminate(target):
+        try:
+            _signal_process_group(target, signal.SIGTERM)
+            stopped.append(target)
+        except ProcessLookupError:
+            pass
+        except Exception as exc:
+            errors.append(str(exc))
+
     if proc is not None and proc.poll() is None:
+        _terminate(proc.pid)
         try:
-            _signal_process_group(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=5)
+        except Exception:
             try:
-                proc.wait(timeout=5)
-            except Exception:
                 _signal_process_group(proc.pid, signal.SIGKILL)
-            flash(f"Training stopped (PID {proc.pid})", "success")
-        except ProcessLookupError:
-            flash("Training process already finished", "info")
-        except Exception as e:
-            flash(f"Error stopping training: {e}", "error")
+            except Exception:
+                pass
     elif pid:
-        try:
-            _signal_process_group(pid, signal.SIGTERM)
-            flash(f"Training stopped (PID {pid})", "success")
-        except ProcessLookupError:
-            flash("Training process already finished", "info")
-        except Exception as e:
-            flash(f"Error stopping training: {e}", "error")
-    else:
+        _terminate(pid)
+
+    # Stop any other launcher roots still attached to this run (for example a
+    # job started before the app restarted, or a duplicate launch).
+    for extra in find_run_training_pids(run_dir):
+        if extra not in stopped and extra != pid:
+            _terminate(extra)
+
+    for message in errors:
+        flash(f"Error stopping training: {message}", "error")
+    if stopped:
+        flash(f"Training stopped (PID {', '.join(map(str, stopped))})", "success")
+    elif not errors:
         flash("No training process to stop", "warning")
 
+    clear_pid_file(run_dir)
     st.session_state["_training_process"] = None
     st.session_state["training_active"] = False
     st.session_state["training_status"] = "Stopped"
@@ -60,6 +79,47 @@ def _stop_training():
             fh.close()
         except Exception:
             pass
+    st.rerun()
+
+
+def _stop_run(run_dir: str):
+    """Stop every trainer process attached to an arbitrary run directory."""
+    from flashstudio.utils import flash
+    from flashstudio.pages.training.processes import (
+        clear_pid_file, find_run_training_pids,
+    )
+
+    pids = find_run_training_pids(run_dir)
+    stopped = []
+    for pid in pids:
+        try:
+            _signal_process_group(pid, signal.SIGTERM)
+            stopped.append(pid)
+        except ProcessLookupError:
+            pass
+        except Exception as exc:
+            flash(f"Could not stop PID {pid}: {exc}", "error")
+    clear_pid_file(run_dir)
+
+    active = str(st.session_state.get("active_run_path") or "")
+    if active and os.path.abspath(active) == os.path.abspath(str(run_dir)):
+        st.session_state["_training_process"] = None
+        st.session_state["training_active"] = False
+        st.session_state["training_status"] = "Stopped"
+        st.session_state["training_paused"] = False
+        st.session_state["training_pid"] = None
+
+    if stopped:
+        flash(
+            f"Stopped `{os.path.basename(run_dir)}` "
+            f"(PID {', '.join(map(str, stopped))})",
+            "success",
+        )
+    else:
+        flash(
+            f"No running process found for `{os.path.basename(run_dir)}`",
+            "info",
+        )
     st.rerun()
 
 

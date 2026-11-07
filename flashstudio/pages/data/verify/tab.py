@@ -5,7 +5,7 @@ import streamlit as st
 
 from flashstudio.constants import IMG_EXTENSIONS_ALL, MAX_PREVIEW_COLS
 from flashstudio.pages.data._common import (
-    _HAS_FLASHDET, _FLASHDET_INSTALL_MSG, _load_data_prompt,
+    _HAS_FLASHDET, _FLASHDET_INSTALL_MSG, _load_data_prompt, make_thumbnail,
 )
 
 try:
@@ -60,32 +60,36 @@ def _render_verify():
 
     auto_verify = st.session_state.pop("_auto_verify", False)
 
-    # FlashDet verify
+    # FlashDet verify — one header row: run button + inline status.
     if can_verify and _HAS_FLASHDET:
-        vc1, vc2 = st.columns([1, 5])
+        vc1, vc2 = st.columns([1.1, 5.5], gap="small")
         with vc1:
-            do_verify = st.button("Verify", type="primary", key="run_verify_btn", use_container_width=True)
+            do_verify = st.button(
+                "Verify", type="primary", key="run_verify_btn",
+                use_container_width=True,
+            )
         do_verify = do_verify or auto_verify
-        with vc2:
-            st.caption(f"Root: `{dataset_root}`")
         if do_verify:
             try:
                 ok = verify_dataset(dataset_root)
                 st.session_state["_last_verify_ok"] = ok
             except Exception as e:
                 st.caption(str(e)[:60])
-        if "_last_verify_ok" in st.session_state:
-            ok = st.session_state["_last_verify_ok"]
-            if ok:
-                st.success("Verification **PASSED**")
-            else:
-                st.warning("Verification: issues detected")
-                if st.button(
-                    "Open annotation repair", key="verify_to_fix",
-                    type="primary",
-                ):
-                    st.session_state["_data_tab_next"] = "Fix"
-                    st.rerun()
+        with vc2:
+            last_ok = st.session_state.get("_last_verify_ok")
+            if last_ok is True:
+                st.caption("✓ Verification passed")
+            elif last_ok is False:
+                sc1, sc2 = st.columns([4, 1.6], gap="small")
+                with sc1:
+                    st.caption("⚠ Verification found issues")
+                with sc2:
+                    if st.button(
+                        "Open repair", key="verify_to_fix",
+                        use_container_width=True,
+                    ):
+                        st.session_state["_data_tab_next"] = "Fix"
+                        st.rerun()
 
         try:
             s = summarize_coco_root(dataset_root)
@@ -97,23 +101,20 @@ def _render_verify():
             )
             has_summary = bool(s) and (train_count > 0 or val_count > 0)
             if has_summary:
-                m1, m2, m3, m4 = st.columns(4)
-                with m1:
-                    st.metric("Train", train_count)
-                with m2:
-                    st.metric("Val", val_count)
-                with m3:
-                    st.metric("Annotations", s.get("n_annotations", 0))
-                with m4:
-                    st.metric("Categories", len(s.get("class_names", [])))
+                st.caption(
+                    f"**{train_count:,}** train · **{val_count:,}** validation · "
+                    f"**{s.get('n_annotations', 0):,}** annotations · "
+                    f"**{len(s.get('class_names', []))}** classes"
+                )
                 if s.get("distribution"):
-                    with st.expander("Class Distribution"):
+                    with st.expander("Class distribution", expanded=False):
                         top = sorted(
                             s["distribution"].items(),
                             key=lambda item: item[1],
                             reverse=True,
                         )[:15]
-                        st.bar_chart({name: count for name, count in top})
+                        st.bar_chart({name: count for name, count in top},
+                                     height=280)
                 return
         except Exception:
             pass
@@ -131,23 +132,21 @@ def _render_verify():
 
         local = summarize_coco_splits(train_path, val_path)
         if local["train_images"] or local["val_images"]:
-            m1, m2, m3, m4 = st.columns(4)
-            with m1:
-                st.metric("Train", local["train_images"])
-            with m2:
-                st.metric("Val", local["val_images"])
-            with m3:
-                st.metric("Annotations", local["annotations"])
-            with m4:
-                st.metric("Categories", len(local["class_names"]))
+            st.caption(
+                f"**{local['train_images']:,}** train · "
+                f"**{local['val_images']:,}** validation · "
+                f"**{local['annotations']:,}** annotations · "
+                f"**{len(local['class_names'])}** classes"
+            )
             if local["distribution"]:
-                with st.expander("Class Distribution"):
+                with st.expander("Class distribution", expanded=False):
                     top = sorted(
                         local["distribution"].items(),
                         key=lambda item: item[1],
                         reverse=True,
                     )[:15]
-                    st.bar_chart({name: count for name, count in top})
+                    st.bar_chart({name: count for name, count in top},
+                                 height=280)
             return
 
     if not _HAS_FLASHDET and dataset_root and os.path.isdir(dataset_root):
@@ -167,33 +166,27 @@ def _render_verify():
     )
     train_labels = len(_list_files(train_label_dir, (".txt",)))
 
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("Train Images", ti)
-    with m2:
-        st.metric("Val Images", vi)
-    with m3:
-        st.metric("Labels", train_labels if train_labels else "—")
-    with m4:
-        status = "OK" if ti else "Empty"
-        if ti and train_labels and train_labels == ti:
-            status = "Complete"
-        elif ti and train_labels and train_labels != ti:
-            status = f"Partial ({train_labels}/{ti})"
-        st.metric("Status", status)
-
-    if train_path and os.path.isdir(train_path):
-        st.caption(f"Train: `{train_path}`")
-    if val_path and os.path.isdir(val_path):
-        st.caption(f"Val: `{val_path}`")
+    status = "OK" if ti else "Empty"
+    if ti and train_labels and train_labels == ti:
+        status = "labels complete"
+    elif ti and train_labels and train_labels != ti:
+        status = f"labels {train_labels}/{ti}"
+    st.caption(
+        f"**{ti:,}** train · **{vi:,}** validation · "
+        f"**{train_labels:,}** label files · {status}"
+    )
 
     # Sample preview
     if ti_names:
-        with st.expander("Samples"):
+        with st.expander("Samples", expanded=False):
             cols = st.columns(min(MAX_PREVIEW_COLS, len(ti_names)))
             for i, img_name in enumerate(ti_names[:MAX_PREVIEW_COLS]):
                 with cols[i]:
                     try:
-                        st.image(os.path.join(train_path, img_name), caption=img_name[:15], use_container_width=True)
+                        from PIL import Image
+
+                        with Image.open(os.path.join(train_path, img_name)) as img:
+                            thumb = make_thumbnail(img.convert("RGB"), (220, 165))
+                        st.image(thumb, caption=img_name[:15], width=220)
                     except Exception:
                         pass

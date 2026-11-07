@@ -4,8 +4,6 @@ import os
 
 import streamlit as st
 
-from flashstudio.pages.dashboard._common import model_display_name
-
 
 def render_quick_actions():
     from flashstudio.utils import get_state
@@ -23,24 +21,19 @@ def render_quick_actions():
         or st.session_state.get("video_results")
     )
 
-    training_detail = (
-        "Training in progress…"
-        if train_status in ("Running", "Paused")
-        else "Launch a run and watch metrics live."
-    )
     steps = [
-        ("Load a dataset", "Import a ZIP or point at a COCO folder.", 1, dataset),
-        ("Configure the model", f"Active model: {model_display_name()}", 2, model),
-        ("Train the model", training_detail, 3, trained),
-        ("Export for deployment", "ONNX, TorchScript, fusion, or INT8.", 4, exported),
-        ("Run inference", "Images, video, or a live stream.", 5, inferred),
+        ("Load a dataset", 1, dataset),
+        ("Configure the model", 2, model),
+        ("Train the model", 3, trained),
+        ("Export for deployment", 4, exported),
+        ("Run inference", 5, inferred),
     ]
-    done = sum(1 for _label, _detail, _step, ok in steps if ok)
+    done = sum(1 for _label, _step, ok in steps if ok)
     st.caption(f"{done} of {len(steps)} steps complete")
     st.progress(done / len(steps))
 
     next_marked = False
-    for label, detail, step, ok in steps:
+    for label, step, ok in steps:
         left, right = st.columns([4, 1])
         with left:
             color = "#059669" if ok else "#D1D5DB"
@@ -49,8 +42,7 @@ def render_quick_actions():
                 f'<div style="display:flex;gap:.6rem;align-items:flex-start;padding:.32rem 0;">'
                 f'<span style="width:9px;height:9px;border-radius:50%;background:{color};'
                 f'margin-top:.35rem;flex:0 0 9px;"></span>'
-                f'<div><div style="font-size:.84rem;font-weight:700;{label_style}">{label}</div>'
-                f'<div style="font-size:.73rem;color:var(--fs-muted);">{detail}</div></div>'
+                f'<div><div style="font-size: var(--fs-text-md);font-weight:700;{label_style}">{label}</div></div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )

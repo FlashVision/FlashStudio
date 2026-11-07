@@ -205,10 +205,6 @@ def render_export_settings(framework: str = "FlashDet", key_prefix: str = "conve
                     placeholder="path/to/data.yaml",
                 )
 
-        st.caption(
-            "The checkpoint and input size come from the card above. "
-            "Framework-specific options appear only when relevant."
-        )
         if not wp:
             st.caption("Select or download a checkpoint first.")
         elif st.button(f"Export {export_fmt}", use_container_width=True,

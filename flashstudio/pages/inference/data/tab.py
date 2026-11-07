@@ -36,7 +36,6 @@ def _tab_data():
         "Input", ["Images", "Video", "RTSP"], horizontal=True,
         key="infer_input_type",
     )
-    st.caption("Supported sources: images, local video, or a live RTSP stream.")
 
     left, right = st.columns([3, 2])
 
@@ -99,8 +98,6 @@ def _tab_data():
             if input_type == "Images":
                 count = len(st.session_state.get("infer_images") or [])
                 st.metric("Selected images", count)
-                st.caption("JPEG, PNG, WEBP, BMP")
-                st.caption("Tip: batch inference runs every image and reports per-image detections.")
             elif input_type == "Video":
                 st.number_input("Max frames (0 = all)", 0, 100000,
                                 INFER_MAX_FRAMES, key="infer_max_frames")
@@ -113,7 +110,6 @@ def _tab_data():
                 if st.button("Test connection", key="test_stream",
                              use_container_width=True):
                     _test_stream()
-                st.caption("Choose Run → Live for continuous RTSP inference.")
 
 
 def _get_video_metadata(video_file):
