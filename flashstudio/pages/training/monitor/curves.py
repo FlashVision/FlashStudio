@@ -28,7 +28,7 @@ def _style(fig, title, y_title, *, log_y=False):
         title=dict(text=title, x=0, xanchor="left", font=dict(size=13)),
         template="plotly_white",
         height=280,
-        margin=dict(l=10, r=10, t=38, b=10),
+        margin=dict(l=10, r=10, t=44, b=10),
         hovermode="x unified",
         hoverlabel=dict(bgcolor="white", font_size=11),
         legend=dict(
@@ -38,11 +38,12 @@ def _style(fig, title, y_title, *, log_y=False):
         font=dict(size=11, color="#374151"),
         xaxis=dict(
             title="Epoch", showgrid=True, gridcolor="#EEF0F6",
-            zeroline=False, tickformat="d",
+            zeroline=False, tickformat="d", automargin=True,
         ),
         yaxis=dict(
             title=y_title, showgrid=True, gridcolor="#EEF0F6",
             zeroline=False, type="log" if log_y else "linear",
+            automargin=True,
         ),
     )
     return fig
@@ -66,6 +67,22 @@ def _add_line(fig, xs, values, name, color, *, dash=None, markers=True):
         marker=dict(size=4),
         hovertemplate="Epoch %{x} · %{y:.4g}<extra>" + name + "</extra>",
     ))
+
+
+def _log_tickvals(values, max_ticks=5):
+    """Pick a readable subset of 1-2-5 log ticks for the given range."""
+    values = [v for v in values if v is not None and v > 0]
+    if not values:
+        return None
+    lo, hi = min(values), max(values)
+    base = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
+    ticks = [t for t in base if lo * 0.75 <= t <= hi * 1.25]
+    if len(ticks) > max_ticks:
+        ticks = [
+            ticks[round(i * (len(ticks) - 1) / (max_ticks - 1))]
+            for i in range(max_ticks)
+        ]
+    return ticks or None
 
 
 def _empty_chart(fig, message):
@@ -106,9 +123,19 @@ def _render_curves(history, run_dir):
 
     epochs = history.get("epochs", [])
     val_epochs = history.get("val_epochs") or []
-    train_loss = history.get("train_loss", [])
+    # Prefer the objective `loss_total` from the log: the CSV `train_loss`
+    # column is the outer batch loss (roughly 4× larger for FlashDet), so
+    # plotting it next to `val_loss` compared two different scales.
+    objective_loss = history.get("train_loss_total") or []
+    train_loss = (
+        objective_loss
+        if any(v is not None for v in objective_loss)
+        else history.get("train_loss", [])
+    )
     val_loss = history.get("val_loss", [])
     map50 = history.get("mAP50", [])
+    if epochs:
+        train_loss = train_loss[: len(epochs)]
 
     # Compact headline above the charts.
     bits = [f"**{len(train_loss)}** epochs logged"]
@@ -123,6 +150,22 @@ def _render_curves(history, run_dir):
         bits.append(f"last train loss **{tail_loss[-1]:.3f}**")
     st.caption(" · ".join(bits))
 
+    # Total loss often starts with a huge warmup epoch (e.g. 527 → 40), which
+    # compresses the rest of the curve against zero on a linear axis. Default
+    # to a log scale when the range spans more than ~8×, and let the user
+    # switch back.
+    loss_values = [v for v in train_loss if v is not None]
+    loss_values += [v for v in val_loss if v is not None]
+    loss_positive = bool(loss_values) and all(v > 0 for v in loss_values)
+    auto_log = loss_positive and (
+        max(loss_values) / min(loss_values) >= 8
+    )
+    log_loss = st.toggle(
+        "Log loss scale", value=auto_log, key="curves_log_loss",
+        help="Keeps later epochs readable when the first warmup epoch is much "
+             "larger than the rest.",
+    ) and loss_positive
+
     # ── Loss ──────────────────────────────────────────────────
     loss_fig = go.Figure()
     _add_line(loss_fig, epochs, train_loss, "Train loss", _COLORS["train_loss"])
@@ -132,7 +175,14 @@ def _render_curves(history, run_dir):
             val_epochs or list(range(1, len(val_loss) + 1)),
             val_loss, "Val loss", _COLORS["val_loss"],
         )
-    _style(loss_fig, "Total loss", "Loss")
+    _style(loss_fig, "Total loss", "Loss (log)" if log_loss else "Loss",
+           log_y=log_loss)
+    if log_loss:
+        ticks = _log_tickvals(loss_values)
+        if ticks:
+            loss_fig.update_yaxes(
+                tickvals=ticks, ticktext=[str(t) for t in ticks], nticks=6,
+            )
 
     # ── mAP ───────────────────────────────────────────────────
     map_fig = go.Figure()
@@ -181,7 +231,21 @@ def _render_curves(history, run_dir):
                   _COLORS["cls"], dash="dash")
         _add_line(sub_fig, epochs, history.get("o2o_box", []), "o2o box",
                   _COLORS["box"], dash="dash")
-    _style(sub_fig, "Sub-losses", "Loss")
+    sub_values = [
+        v
+        for key in ("train_cls", "train_box", "train_l1", "val_cls", "val_box",
+                    "o2m_cls", "o2m_box", "o2o_cls", "o2o_box")
+        for v in history.get(key, []) if v is not None
+    ]
+    sub_log = log_loss and bool(sub_values) and all(v > 0 for v in sub_values)
+    _style(sub_fig, "Sub-losses", "Loss (log)" if sub_log else "Loss",
+           log_y=sub_log)
+    if sub_log:
+        ticks = _log_tickvals(sub_values)
+        if ticks:
+            sub_fig.update_yaxes(
+                tickvals=ticks, ticktext=[str(t) for t in ticks], nticks=6,
+            )
     if not has_csv_subloss and not has_log_subloss:
         _empty_chart(sub_fig, "No sub-loss values in this run")
 
@@ -197,6 +261,13 @@ def _render_curves(history, run_dir):
     _style(lr_fig, "Learning rate", "LR", log_y=True)
     if not any(v is not None for v in lr):
         _empty_chart(lr_fig, "No learning-rate values in this run")
+
+    # Short runs get one tick per epoch; long runs keep Plotly's auto ticks.
+    all_epochs = [x for x in epochs if isinstance(x, (int, float))]
+    all_epochs += [x for x in val_epochs if isinstance(x, (int, float))]
+    if all_epochs and max(all_epochs) - min(all_epochs) <= 20:
+        for chart in (loss_fig, map_fig, sub_fig, lr_fig):
+            chart.update_xaxes(dtick=1, tick0=1)
 
     row1 = st.columns(2, gap="medium")
     with row1[0]:

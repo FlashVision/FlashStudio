@@ -13,15 +13,30 @@ from flashstudio.pages.training.progress import _render_training_progress
 
 
 def _load_run_data(run_dir):
-    """Return ``(log_file, history)`` for a run directory."""
+    """Return ``(log_file, history)`` for a run directory.
+
+    CSV is the primary source (epoch averages), but it does not contain the
+    objective `loss_total` or the o2m/o2o sub-losses. Those only exist in the
+    training log, so merge the missing series from the log into the CSV data.
+    """
     log_file = None
     history = None
     if run_dir and os.path.isdir(run_dir):
         log_file = _find_log_file(run_dir)
-        # Prefer CSV (clean numeric data), fall back to log parsing
         history = _parse_training_csv(run_dir)
-        if not history:
-            history = _parse_training_log(log_file) if log_file else None
+        log_history = _parse_training_log(log_file) if log_file else None
+        if history and log_history:
+            for key in (
+                "train_loss_total", "o2m_cls", "o2m_box",
+                "o2o_cls", "o2o_box",
+            ):
+                current = history.get(key) or []
+                if not any(v is not None for v in current):
+                    values = log_history.get(key) or []
+                    if any(v is not None for v in values):
+                        history[key] = values
+        elif not history:
+            history = log_history
     return log_file, history
 
 
@@ -103,7 +118,8 @@ def _render_metrics_from_history(history, run_dir):
     if history:
         n_epochs = len(history["epochs"])
         total = history.get("total_epochs") or n_epochs
-        losses = [x for x in history["train_loss"] if x is not None]
+        train_series = history.get("train_loss_total") or history["train_loss"]
+        losses = [x for x in train_series if x is not None]
         vl = [x for x in history.get("val_loss", []) if x is not None]
         mp = [x for x in history.get("mAP50", []) if x is not None]
         lr_values = [x for x in history.get("lr", []) if x is not None]

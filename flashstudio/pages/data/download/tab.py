@@ -12,7 +12,7 @@ from flashstudio.pages.data._common import (
 )
 from flashstudio.pages.data.helpers import (
     _use_existing, _start_flashdet_download, _start_external_download,
-    _download_is_active,
+    _download_is_active, _build_tiny_2class,
 )
 
 
@@ -92,6 +92,15 @@ def _render_download():
                 else:
                     _start_flashdet_download(did, ds["name"], ds.get("cls"))
 
+    # Tiny local sample built from the bundled COCO128 images.
+    st.markdown("#### Tiny 2-class sample")
+    t1, t2 = st.columns([5, 1])
+    with t1:
+        st.caption("**Tiny 2-Class** · person + car · 24 images · built offline")
+    with t2:
+        if st.button("Build", key="build_tiny2", use_container_width=True):
+            _build_tiny_2class()
+
     # Native datasets
     native = _get_native_datasets()
     if native:
@@ -119,6 +128,11 @@ def _render_download():
 
     # External
     with st.expander(f"External Datasets ({len(EXTERNAL_DATASETS)})", expanded=False):
+        st.caption(
+            "Downloads are normalized to COCO. Supported inputs: COCO, VOC, "
+            "YOLO, KITTI, LabelMe, CSV, and Supervisely. After loading, use "
+            "Use a subset for a 10% tiny version."
+        )
         for i, ds in enumerate(EXTERNAL_DATASETS):
             c1, c2 = st.columns([5, 1])
             with c1:
@@ -127,15 +141,21 @@ def _render_download():
                     f'{ds["imgs"]} · {ds["cls"]} cls · {ds["sz"]} · {ds["fmt"]}</div>',
                     unsafe_allow_html=True,
                 )
+                if ds.get("desc"):
+                    st.caption(ds["desc"])
+                conv = str(ds.get("convert", "") or "")
+                if conv and conv.lower() != "none":
+                    st.caption(f"Auto-convert: **{conv} → COCO** after loading")
+                elif not _is_archive_url(ds.get("url", "")):
+                    st.caption("Manual download · no automatic annotation conversion")
             with c2:
                 url = ds.get("url", "")
                 is_manual = not _is_archive_url(url)
-                if st.button(
-                    "Link" if is_manual else "Get", key=f"ext_{i}",
-                    use_container_width=True,
-                    disabled=active and not is_manual,
-                ):
-                    if is_manual:
-                        st.info(f"Manual download: [{url}]({url})")
-                    else:
+                if is_manual:
+                    st.link_button("Open", url, use_container_width=True)
+                else:
+                    if st.button(
+                        "Get", key=f"ext_{i}", use_container_width=True,
+                        disabled=active,
+                    ):
                         _start_external_download(ds)

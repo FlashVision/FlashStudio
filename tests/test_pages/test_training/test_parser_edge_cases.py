@@ -130,7 +130,8 @@ class TestParseLogEdgeCases:
         )
         history = _parse_training_log(str(log_path))
         assert history is not None
-        assert history["train_loss"][0] == pytest.approx(4.80, abs=0.01)
+        assert history["train_loss"][0] == pytest.approx(5.00, abs=0.01)
+        assert history["train_loss_total"][0] == pytest.approx(4.80, abs=0.01)
         assert history["o2m_cls"][0] == pytest.approx(1.2, abs=0.1)
 
     def test_log_with_epoch_time(self, tmp_path):

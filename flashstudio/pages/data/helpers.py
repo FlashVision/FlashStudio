@@ -350,6 +350,124 @@ def _link_dir_or_copy(src, dst):
         shutil.copytree(src, dst)
 
 
+def _build_tiny_2class():
+    """Create a tiny person/car detection set from the bundled COCO128 sample."""
+    import json
+    import shutil
+
+    root = os.path.join(_get_data_root(), "coco128", "coco128")
+    if not os.path.isdir(root):
+        from flashstudio.constants import DEFAULT_DATA_DIR
+        root = os.path.join(DEFAULT_DATA_DIR, "coco128", "coco128")
+    img_dir = os.path.join(root, "images", "train2017")
+    lbl_dir = os.path.join(root, "labels", "train2017")
+    if not (os.path.isdir(img_dir) and os.path.isdir(lbl_dir)):
+        from flashstudio.utils import flash
+        flash("Bundled COCO128 sample not found.", "error")
+        st.rerun()
+        return
+
+    out = os.path.join(_get_data_root(), "uploaded", "tiny2")
+    shutil.rmtree(out, ignore_errors=True)
+
+    entries = []
+    for name in sorted(os.listdir(lbl_dir)):
+        if not name.endswith(".txt"):
+            continue
+        with open(os.path.join(lbl_dir, name), "r") as fh:
+            lines = [ln.strip() for ln in fh if ln.strip()]
+        keep = []
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            cid = int(float(parts[0]))
+            if cid in (0, 2):  # COCO: 0=person, 2=car
+                keep.append(("0" if cid == 0 else "1") + " " + " ".join(parts[1:5]))
+        image = os.path.join(img_dir, os.path.splitext(name)[0] + ".jpg")
+        if keep and os.path.isfile(image):
+            entries.append((image, keep))
+        if len(entries) >= 24:
+            break
+
+    if len(entries) < 4:
+        from flashstudio.utils import flash
+        flash("Not enough person/car images in the bundled sample.", "warning")
+        st.rerun()
+        return
+
+    split_at = max(1, int(len(entries) * 0.75))
+    splits = {
+        "train": entries[:split_at],
+        "val": entries[split_at:],
+    }
+    if not splits["val"]:
+        splits["val"] = splits["train"][-1:]
+        splits["train"] = splits["train"][:-1] or splits["val"]
+
+    from PIL import Image
+
+    state = {}
+    for split, split_entries in splits.items():
+        s_img = os.path.join(out, split, "images")
+        os.makedirs(s_img, exist_ok=True)
+        images, annotations = [], []
+        ann_id = 1
+        for image_payload, lines in split_entries:
+            name = os.path.basename(image_payload)
+            _copy_or_link(image_payload, os.path.join(s_img, name))
+            with Image.open(image_payload) as im:
+                width, height = im.size
+            image_id = len(images) + 1
+            images.append({
+                "id": image_id, "file_name": name,
+                "width": width, "height": height,
+            })
+            for line in lines:
+                cls, cx, cy, bw, bh = line.split()
+                cx, cy, bw, bh = map(float, (cx, cy, bw, bh))
+                x = (cx - bw / 2) * width
+                y = (cy - bh / 2) * height
+                w = bw * width
+                h = bh * height
+                annotations.append({
+                    "id": ann_id, "image_id": image_id,
+                    "category_id": int(cls) + 1,
+                    "bbox": [x, y, w, h], "area": w * h, "iscrowd": 0,
+                })
+                ann_id += 1
+        json_path = os.path.join(s_img, "_annotations.coco.json")
+        with open(json_path, "w", encoding="utf-8") as fh:
+            json.dump({
+                "images": images, "annotations": annotations,
+                "categories": [
+                    {"id": 1, "name": "person", "supercategory": "object"},
+                    {"id": 2, "name": "car", "supercategory": "object"},
+                ],
+            }, fh)
+        state[f"{split}_img_path"] = s_img
+        state[f"{split}_ann_path"] = json_path
+        state[f"{split}_label_path"] = ""
+
+    for key in (
+        "_last_verify_ok", "_quality_report", "dataset_output_path",
+        "_pending_ann_format", "_fixed_coco_download", "_fixed_coco_name",
+    ):
+        st.session_state.pop(key, None)
+    state.update({
+        "dataset_name": "Tiny 2-Class (person, car)",
+        "class_names": "person\ncar",
+        "num_classes": 2,
+        "ann_format": "COCO JSON",
+        "detected_format": "coco",
+        "_data_tab_next": "Preview",
+    })
+    st.session_state.update(state)
+    from flashstudio.utils import flash
+    flash(f"Built Tiny 2-Class · {len(entries)} images", "success")
+    st.rerun()
+
+
 def _split_yolo_train_pair(images_dir, labels_dir, work_root):
     """Create train/valid folders from a single YOLO train pair."""
     import shutil
@@ -464,21 +582,32 @@ def _convert_to_coco(src, split, src_fmt):
         cls_names = [c.strip() for c in raw.strip().replace(",", "\n").split("\n") if c.strip()]
     with st.spinner("Converting to COCO..."):
         try:
-            try:
-                stats = convert_dataset(
-                    source_dir=src, output_dir=out,
-                    target_format="coco", class_names=cls_names,
+            if src_fmt in ("kitti", "labelme", "csv", "supervisely"):
+                from flashstudio.utils.universal_convert import (
+                    convert_extra_to_coco,
                 )
-            except Exception:
-                if src_fmt != "txt":
-                    raise
-                # FlashDet only detects train/images-style YOLO layouts.
-                # Normalize other layouts (images/train2017, flat images, ...)
-                # through a canonical temporary folder.
-                shutil.rmtree(out, ignore_errors=True)
-                stats = _convert_yolo_layout(src, out, cls_names)
-                if stats is None:
-                    raise
+
+                stats = convert_extra_to_coco(src, out, val_ratio=0.2)
+                if not stats:
+                    raise RuntimeError(
+                        f"{src_fmt} → COCO conversion produced no images"
+                    )
+            else:
+                try:
+                    stats = convert_dataset(
+                        source_dir=src, output_dir=out,
+                        target_format="coco", class_names=cls_names,
+                    )
+                except Exception:
+                    if src_fmt != "txt":
+                        raise
+                    # FlashDet only detects train/images-style YOLO layouts.
+                    # Normalize other layouts (images/train2017, flat images, ...)
+                    # through a canonical temporary folder.
+                    shutil.rmtree(out, ignore_errors=True)
+                    stats = _convert_yolo_layout(src, out, cls_names)
+                    if stats is None:
+                        raise
             if stats.get("status") == "already_in_target_format":
                 out = src
             st.session_state["dataset_output_path"] = out
@@ -1417,6 +1546,123 @@ def _class_names_for_download(name: str, labels_dir: str | None) -> list[str]:
     return [f"class_{i}" for i in range(max_id + 1)]
 
 
+def _find_kitti_dirs(root):
+    for img_rel, lbl_rel in (
+        (("training", "image_2"), ("training", "label_2")),
+        (("image_2",), ("label_2",)),
+        (("images",), ("labels",)),
+    ):
+        img_dir = os.path.join(root, *img_rel)
+        lbl_dir = os.path.join(root, *lbl_rel)
+        if os.path.isdir(img_dir) and os.path.isdir(lbl_dir):
+            return img_dir, lbl_dir
+    return None, None
+
+
+def _convert_kitti_layout(root, out):
+    """Convert a KITTI object-detection folder to COCO train/valid splits."""
+    import json
+    import random
+
+    from PIL import Image
+
+    img_dir, lbl_dir = _find_kitti_dirs(root)
+    if not img_dir:
+        return None
+
+    image_names = sorted(
+        name for name in os.listdir(img_dir)
+        if name.lower().endswith((".png", ".jpg", ".jpeg"))
+    )
+    if not image_names:
+        return None
+
+    entries = []
+    classes = set()
+    for name in image_names:
+        label_path = os.path.join(lbl_dir, os.path.splitext(name)[0] + ".txt")
+        boxes = []
+        if os.path.isfile(label_path):
+            with open(label_path, "r", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    parts = line.split()
+                    if len(parts) < 8 or parts[0] in ("DontCare", "Misc"):
+                        continue
+                    try:
+                        x1, y1, x2, y2 = map(float, parts[4:8])
+                    except ValueError:
+                        continue
+                    if x2 <= x1 or y2 <= y1:
+                        continue
+                    boxes.append((parts[0], [x1, y1, x2 - x1, y2 - y1]))
+                    classes.add(parts[0])
+        try:
+            with Image.open(os.path.join(img_dir, name)) as im:
+                width, height = im.size
+        except Exception:
+            continue
+        entries.append({
+            "path": os.path.join(img_dir, name),
+            "name": name,
+            "width": width,
+            "height": height,
+            "boxes": boxes,
+        })
+
+    if not entries or not classes:
+        return None
+
+    class_names = sorted(classes)
+    cat_ids = {name: i + 1 for i, name in enumerate(class_names)}
+    rng = random.Random(0)
+    rng.shuffle(entries)
+    split_at = max(1, int(len(entries) * 0.8))
+    splits = {"train": entries[:split_at], "valid": entries[split_at:]}
+    if not splits["valid"]:
+        splits["valid"] = splits["train"][-1:]
+        splits["train"] = splits["train"][:-1] or splits["valid"]
+
+    import shutil
+
+    shutil.rmtree(out, ignore_errors=True)
+    stats = {}
+    for split, split_entries in splits.items():
+        img_out = os.path.join(out, split, "images")
+        os.makedirs(img_out, exist_ok=True)
+        images, annotations = [], []
+        ann_id = 1
+        for image_id, entry in enumerate(split_entries, start=1):
+            _copy_or_link(entry["path"], os.path.join(img_out, entry["name"]))
+            images.append({
+                "id": image_id,
+                "file_name": entry["name"],
+                "width": entry["width"],
+                "height": entry["height"],
+            })
+            for cls, bbox in entry["boxes"]:
+                annotations.append({
+                    "id": ann_id,
+                    "image_id": image_id,
+                    "category_id": cat_ids[cls],
+                    "bbox": bbox,
+                    "area": float(bbox[2]) * float(bbox[3]),
+                    "iscrowd": 0,
+                })
+                ann_id += 1
+        with open(os.path.join(img_out, "_annotations.coco.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({
+                "images": images,
+                "annotations": annotations,
+                "categories": [
+                    {"id": cid, "name": cname, "supercategory": "object"}
+                    for cname, cid in cat_ids.items()
+                ],
+            }, fh)
+        stats[split] = len(images)
+    return stats
+
+
 def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
     """Normalize a downloaded dataset so it becomes trainable.
 
@@ -1502,6 +1748,64 @@ def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
                     "warning",
                 )
             return images_dir
+
+    # KITTI object-detection layout (training/image_2 + training/label_2).
+    kitti_out = os.path.join(
+        os.path.dirname(root), os.path.basename(root) + "_coco"
+    )
+    kitti_stats = _convert_kitti_layout(root, kitti_out)
+    if kitti_stats:
+        train_path = os.path.join(kitti_out, "train")
+        valid_path = os.path.join(kitti_out, "valid")
+        st.session_state["dataset_output_path"] = kitti_out
+        st.session_state["dataset_name"] = name
+        st.session_state["train_img_path"] = _image_dir(train_path)
+        st.session_state["val_img_path"] = _image_dir(valid_path)
+        _ensure_dataset_annotations(kitti_out)
+        st.session_state["detected_format"] = "coco"
+        st.session_state["_pending_ann_format"] = "COCO JSON"
+        detected = _auto_detect_classes()
+        if detected:
+            st.session_state["class_names"] = "\n".join(detected)
+            st.session_state["num_classes"] = len(detected)
+        flash(
+            f"Dataset `{name}` converted from KITTI to COCO "
+            f"({kitti_stats.get('train', 0)} train · "
+            f"{kitti_stats.get('valid', 0)} val)",
+            "success",
+        )
+        return train_path
+
+    # LabelMe / CSV / Supervisely fallbacks.
+    from flashstudio.utils.universal_convert import (
+        convert_extra_to_coco, detect_extra_format,
+    )
+
+    extra_fmt = detect_extra_format(root)
+    if extra_fmt:
+        extra_out = os.path.join(
+            os.path.dirname(root), os.path.basename(root) + "_coco"
+        )
+        extra_stats = convert_extra_to_coco(root, extra_out, val_ratio=0.2)
+        if extra_stats:
+            train_path = _image_dir(os.path.join(extra_out, "train"))
+            valid_path = _image_dir(os.path.join(extra_out, "valid"))
+            st.session_state["dataset_output_path"] = extra_out
+            st.session_state["dataset_name"] = name
+            st.session_state["train_img_path"] = train_path
+            st.session_state["val_img_path"] = valid_path
+            _ensure_dataset_annotations(extra_out)
+            st.session_state["detected_format"] = "coco"
+            st.session_state["_pending_ann_format"] = "COCO JSON"
+            detected = _auto_detect_classes()
+            if detected:
+                st.session_state["class_names"] = "\n".join(detected)
+                st.session_state["num_classes"] = len(detected)
+            flash(
+                f"Dataset `{name}` converted from {extra_fmt.upper()} to COCO",
+                "success",
+            )
+            return train_path
 
     # YOLO-style archive: normalize into train/valid (preserving an existing
     # validation split), then convert to COCO.

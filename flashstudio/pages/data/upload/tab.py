@@ -190,7 +190,11 @@ def _render_conversion_hint():
     c1, c2, c3 = st.columns([1.6, 1.3, 3.1], gap="small")
     with c1:
         st.selectbox(
-            "Annotation format", ["COCO JSON", "Pascal VOC", "YOLO TXT"],
+            "Annotation format",
+            [
+                "COCO JSON", "Pascal VOC", "YOLO TXT", "KITTI TXT",
+                "LabelMe JSON", "CSV bboxes", "Supervisely",
+            ],
             key="ann_format",
         )
 
@@ -199,27 +203,55 @@ def _render_conversion_hint():
         return
     ann_format = st.session_state.get("ann_format", "COCO JSON")
     detected = st.session_state.get("detected_format", "")
-    needs = "YOLO" in ann_format or "VOC" in ann_format or detected in ("txt", "voc")
+    extra_formats = {
+        "KITTI": "kitti", "LabelMe": "labelme",
+        "CSV": "csv", "Supervisely": "supervisely",
+    }
+    needs = (
+        "YOLO" in ann_format
+        or "VOC" in ann_format
+        or any(key in ann_format for key in extra_formats)
+        or detected in ("txt", "voc", "kitti", "labelme", "csv", "supervisely")
+    )
     if not needs:
         coco_ann = os.path.join(train_path, "_annotations.coco.json")
-        if not os.path.isfile(coco_ann) and _HAS_FLASHDET:
+        if not os.path.isfile(coco_ann):
             from flashstudio.utils.dataset_paths import split_dir
 
             parent = os.path.dirname(split_dir(train_path))
-            det_fmt = detect_dataset_format(parent)
-            if det_fmt in ("txt", "voc"):
+            candidates = [
+                train_path,
+                os.path.dirname(train_path),
+                os.path.dirname(os.path.dirname(train_path)),
+                parent,
+            ]
+            from flashstudio.utils.universal_convert import detect_extra_format
+
+            extra = ""
+            for candidate in candidates:
+                if candidate and os.path.isdir(candidate):
+                    extra = detect_extra_format(candidate)
+                    if extra:
+                        break
+            if extra:
                 needs = True
-                st.session_state["detected_format"] = det_fmt
-                detected = det_fmt
-            elif (
-                _find_labels(train_path)
-                or _find_labels(parent)
-                or _find_labels(os.path.dirname(parent))
-            ):
-                # Non-standard YOLO layout (images/train2017 + labels/...).
-                needs = True
-                detected = "txt"
-                st.session_state["detected_format"] = "txt"
+                detected = extra
+                st.session_state["detected_format"] = extra
+            elif _HAS_FLASHDET:
+                det_fmt = detect_dataset_format(parent)
+                if det_fmt in ("txt", "voc"):
+                    needs = True
+                    st.session_state["detected_format"] = det_fmt
+                    detected = det_fmt
+                elif (
+                    _find_labels(train_path)
+                    or _find_labels(parent)
+                    or _find_labels(os.path.dirname(parent))
+                ):
+                    # Non-standard YOLO layout (images/train2017 + labels/...).
+                    needs = True
+                    detected = "txt"
+                    st.session_state["detected_format"] = "txt"
     if not needs:
         return
     with c2:
@@ -230,7 +262,18 @@ def _render_conversion_hint():
             source = os.path.dirname(split_dir(train_path))
             if not os.path.isdir(source):
                 source = split_dir(train_path)
-            tfmt = "txt" if "YOLO" in ann_format or detected == "txt" else "voc"
+            if "KITTI" in ann_format or detected == "kitti":
+                tfmt = "kitti"
+            elif "LabelMe" in ann_format or detected == "labelme":
+                tfmt = "labelme"
+            elif "CSV" in ann_format or detected == "csv":
+                tfmt = "csv"
+            elif "Supervisely" in ann_format or detected == "supervisely":
+                tfmt = "supervisely"
+            elif "YOLO" in ann_format or detected == "txt":
+                tfmt = "txt"
+            else:
+                tfmt = "voc"
             _convert_to_coco(source, "train", tfmt)
     with c3:
         st.caption(

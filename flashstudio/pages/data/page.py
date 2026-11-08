@@ -11,6 +11,8 @@ from flashstudio.pages.data.verify.tab import _render_verify
 from flashstudio.pages.data.fix.tab import _render_fix
 from flashstudio.pages.data.edit.tab import _render_edit
 from flashstudio.pages.data.quality.tab import _render_quality
+from flashstudio.pages.data.split.tab import _render_split
+from flashstudio.pages.data.convert.tab import _render_convert
 from flashstudio.pages.data.helpers import _render_dataset_download_status
 
 
@@ -236,9 +238,9 @@ def render_data_page():
     else:
         st.info("No dataset loaded yet — choose **Upload** or **Download** below.")
 
-    (tab_load, tab_preview, tab_verify,
+    (tab_load, tab_convert, tab_preview, tab_verify,
      tab_fix, tab_edit, tab_quality) = _data_tabs(
-        ["Load data", "Preview", "Verify", "Fix", "Edit", "Quality"]
+        ["Load data", "Convert", "Preview", "Verify", "Fix", "Edit", "Quality"]
     )
 
     with tab_load:
@@ -253,8 +255,14 @@ def render_data_page():
                 st.rerun()
             with st.expander("Replace dataset", expanded=False):
                 _render_loader_controls()
+            with st.expander("Use a subset (train / validation)", expanded=False):
+                _render_split()
         else:
             _render_loader_controls()
+
+    with tab_convert:
+        with st.container(border=True):
+            _render_convert()
 
     with tab_preview:
         with st.container(border=True):

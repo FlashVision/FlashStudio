@@ -112,7 +112,7 @@ def test_data_skeleton(tmp_path):
         "from flashstudio.pages.data.page import render_data_page\nrender_data_page()",
     )
     assert [tab.label for tab in at.tabs] == [
-        "Load data", "Preview", "Verify", "Fix", "Edit", "Quality"
+        "Load data", "Convert", "Preview", "Verify", "Fix", "Edit", "Quality"
     ]
 
 
@@ -176,7 +176,7 @@ def test_data_skeleton_with_dataset(tmp_path):
         },
     )
     assert [tab.label for tab in at.tabs] == [
-        "Load data", "Preview", "Verify", "Fix", "Edit",
+        "Load data", "Convert", "Preview", "Verify", "Fix", "Edit",
         "Objects", "Labels", "Quality",
     ]
     assert any(e.label == "Replace dataset" for e in at.expander)
@@ -438,7 +438,7 @@ def test_data_health_card_has_no_duplicate_actions(tmp_path):
     ):
         assert key not in keys
     assert [tab.label for tab in at.tabs] == [
-        "Load data", "Preview", "Verify", "Fix", "Edit",
+        "Load data", "Convert", "Preview", "Verify", "Fix", "Edit",
         "Objects", "Labels", "Quality",
     ]
 

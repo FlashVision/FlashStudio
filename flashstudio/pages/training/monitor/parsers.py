@@ -136,6 +136,7 @@ def _parse_training_log(log_path: str):
 
     history = {
         "epochs": [], "lr": [], "train_loss": [],
+        "train_loss_total": [],
         "val_loss": [], "mAP50": [],
         "o2m_cls": [], "o2m_box": [], "o2o_cls": [], "o2o_box": [],
         "ema_decay": [], "epoch_time": [],
@@ -193,13 +194,6 @@ def _parse_training_log(log_path: str):
             history["mAP50"].append(float(val_m.group(3)))
 
             detail = val_m.group(2)
-            lt = re.search(r"loss_total:\s*([\d.]+)", detail)
-            if lt:
-                while len(history["train_loss"]) < current_epoch:
-                    history["train_loss"].append(None)
-                if current_epoch > 0:
-                    history["train_loss"][current_epoch - 1] = float(lt.group(1))
-
             for key, pattern in [
                 ("o2m_cls", r"o2m_cls:\s*([\d.]+)"),
                 ("o2m_box", r"o2m_box:\s*([\d.]+)"),
@@ -227,12 +221,14 @@ def _parse_training_log(log_path: str):
         if batch_m:
             ep = int(batch_m.group(1))
             raw_loss = float(batch_m.group(2))
-            # Use loss_total if available (more meaningful), else use raw Loss
             lt = re.search(r"loss_total:\s*([\d.]+)", line)
-            loss_val = float(lt.group(1)) if lt else raw_loss
             while len(history["train_loss"]) < ep:
                 history["train_loss"].append(None)
-            history["train_loss"][ep - 1] = loss_val
+            history["train_loss"][ep - 1] = raw_loss
+            while len(history["train_loss_total"]) < ep:
+                history["train_loss_total"].append(None)
+            if lt:
+                history["train_loss_total"][ep - 1] = float(lt.group(1))
             # Extract sub-losses
             for key, pattern in [
                 ("o2m_cls", r"o2m_cls:\s*([\d.]+)"),
@@ -244,6 +240,36 @@ def _parse_training_log(log_path: str):
                 while len(history[key]) < ep:
                     history[key].append(None)
                 if sm and ep > 0:
+                    history[key][ep - 1] = float(sm.group(1))
+
+        # Compact batch line used by the bundled FlashDet trainer:
+        #   [420/2117] Loss: 43.05 (loss_total: 10.7, o2m_cls: ...)
+        elif (
+            current_epoch > 0
+            and re.search(r"\[(\d+)/(\d+)\]\s+Loss:\s*([\d.]+)", line)
+            and "Batch [" not in line
+        ):
+            cm = re.search(r"\[(\d+)/(\d+)\]\s+Loss:\s*([\d.]+)", line)
+            ep = current_epoch
+            raw_loss = float(cm.group(3))
+            lt = re.search(r"loss_total:\s*([\d.]+)", line)
+            while len(history["train_loss"]) < ep:
+                history["train_loss"].append(None)
+            history["train_loss"][ep - 1] = raw_loss
+            while len(history["train_loss_total"]) < ep:
+                history["train_loss_total"].append(None)
+            if lt:
+                history["train_loss_total"][ep - 1] = float(lt.group(1))
+            for key, pattern in [
+                ("o2m_cls", r"o2m_cls:\s*([\d.]+)"),
+                ("o2m_box", r"o2m_box:\s*([\d.]+)"),
+                ("o2o_cls", r"o2o_cls:\s*([\d.]+)"),
+                ("o2o_box", r"o2o_box:\s*([\d.]+)"),
+            ]:
+                sm = re.search(pattern, line)
+                while len(history[key]) < ep:
+                    history[key].append(None)
+                if sm:
                     history[key][ep - 1] = float(sm.group(1))
 
         # Epoch time — FlashDet logs "Time: Xs" at end of batch lines

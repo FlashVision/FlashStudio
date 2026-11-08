@@ -198,7 +198,9 @@ def _is_archive_url(url: str) -> bool:
 
 
 EXTERNAL_DATASETS = [
-    {"name": "COCO128", "imgs": 128, "cls": 80, "sz": "7MB", "fmt": "YOLO → COCO", "url": "https://github.com/ultralytics/yolov5/releases/download/v1.0/coco128.zip"},
+    {"name": "COCO128", "imgs": 128, "cls": 80, "sz": "7MB", "fmt": "YOLO → COCO", "desc": "Quick training pipeline validation.", "convert": "YOLO", "url": "https://github.com/ultralytics/yolov5/releases/download/v1.0/coco128.zip"},
+    {"name": "Raccoon (1 class)", "imgs": 200, "cls": 1, "sz": "~14MB", "fmt": "VOC → COCO", "desc": "Small single-class detection starter.", "convert": "VOC", "url": "https://github.com/datitran/raccoon_dataset/archive/refs/heads/master.zip"},
+    {"name": "COCO8 (tiny)", "imgs": 8, "cls": 80, "sz": "~0.4MB", "fmt": "YOLO → COCO", "desc": "Tiny smoke-test set for a full train/export cycle.", "convert": "YOLO", "url": "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco8.zip"},
     {"name": "Objects365", "imgs": 5000, "cls": 365, "sz": "~2GB", "fmt": "COCO", "url": "https://dorc.ks3-cn-beijing.ksyun.com/data-set/2020Objects365%E6%95%B0%E6%8D%AE%E9%9B%86/val/zhiyuan_objv2_val.json"},
     {"name": "GlobalWheat", "imgs": 4700, "cls": 1, "sz": "~3GB", "fmt": "COCO", "url": "https://zenodo.org/records/4298502"},
 
@@ -208,7 +210,9 @@ EXTERNAL_DATASETS = [
     {"name": "Cityscapes", "imgs": 5000, "cls": 30, "sz": "~11GB", "fmt": "Custom", "url": "https://www.cityscapes-dataset.com/"},
     {"name": "BDD100K", "imgs": 100000, "cls": 10, "sz": "~6GB", "fmt": "Custom", "url": "http://bdd-data.berkeley.edu/"},
 
-    {"name": "KITTI", "imgs": 7481, "cls": 3, "sz": "~12GB", "fmt": "Custom", "url": "http://www.cvlibs.net/datasets/kitti/eval_object.php"},
+    {"name": "KITTI (pedestrian + vehicle)", "imgs": 7481, "cls": 9, "sz": "~12GB", "fmt": "KITTI → COCO", "desc": "Pedestrian and vehicle detection.", "convert": "KITTI", "url": "http://www.cvlibs.net/datasets/kitti/eval_object.php"},
+    {"name": "DSVD (small vehicles)", "imgs": 3225, "cls": 1, "sz": "on request", "fmt": "DSVD → COCO (manual)", "desc": "Tiny-object detection research (dim/small vehicles).", "convert": "none", "url": "https://doi.org/10.3390/rs14215488"},
+    {"name": "Person & Vehicle (2 cls)", "imgs": 2000, "cls": 2, "sz": "~345MB", "fmt": "YOLO → COCO", "desc": "Lightweight two-class experiments (person, vehicle).", "convert": "YOLO", "url": "https://www.kaggle.com/datasets/haseebhsb/yolo-person-vehicle-detection-dataset-annotated"},
     {"name": "xView", "imgs": 1400, "cls": 60, "sz": "~4GB", "fmt": "GeoJSON", "url": "http://xviewdataset.org/"},
     {"name": "OpenImages V7", "imgs": 1900000, "cls": 600, "sz": "~500GB", "fmt": "CSV", "url": "https://storage.googleapis.com/openimages/web/index.html"},
     {"name": "LVIS v1", "imgs": 164000, "cls": 1203, "sz": "~20GB", "fmt": "COCO", "url": "https://www.lvisdataset.org/"},

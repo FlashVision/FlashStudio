@@ -1,12 +1,9 @@
 """Launch FlashStudio UI — works locally and inside Google Colab."""
 
-import atexit
-import platform
 import subprocess
 import sys
 import os
 import re
-import tempfile
 import time as _time
 from pathlib import Path
 
@@ -72,151 +69,59 @@ def launch(port: int = 8501, share: bool = True, ngrok_token: str | None = None)
 # Tunnel helpers
 # ---------------------------------------------------------------------------
 
-# Keep tunnel processes referenced for the lifetime of the session. If these
-# are garbage collected or terminated, the trycloudflare.com hostname starts
-# returning Cloudflare error 1033 ("tunnel cannot resolve").
-_LIVE_TUNNELS: list = []
+def _start_cloudflared_tunnel(port: int) -> str | None:
+    """Start a free Cloudflare tunnel (no sign-up required).
 
-
-def _shutdown_tunnels():
-    for proc in list(_LIVE_TUNNELS):
-        try:
-            if proc.poll() is None:
-                proc.terminate()
-        except OSError:
-            pass
-
-
-atexit.register(_shutdown_tunnels)
-
-
-def _cloudflared_binary() -> str | None:
-    """Return a usable cloudflared binary path, downloading it if needed."""
-    import shutil
-
-    existing = shutil.which("cloudflared")
-    if existing:
-        return existing
-
+    Returns the public https URL or None on failure.
+    """
     binary = "/usr/local/bin/cloudflared"
-    if os.path.isfile(binary):
-        return binary
-
-    machine = platform.machine().lower()
-    arch = "arm64" if machine in ("aarch64", "arm64") else "amd64"
-    url = ("https://github.com/cloudflare/cloudflared/releases/latest/download/"
-           f"cloudflared-linux-{arch}")
-
-    try:
-        subprocess.check_call(
-            ["wget", "-q", url, "-O", binary],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-    except Exception:
+    if not os.path.isfile(binary):
         try:
-            import urllib.request
-            urllib.request.urlretrieve(url, binary)
+            subprocess.check_call(
+                ["wget", "-q",
+                 "https://github.com/cloudflare/cloudflared/releases/latest"
+                 "/download/cloudflared-linux-amd64",
+                 "-O", binary],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            os.chmod(binary, 0o755)
         except Exception:
             return None
 
     try:
-        os.chmod(binary, 0o755)
+        tunnel_proc = subprocess.Popen(
+            [binary, "tunnel", "--url", f"http://localhost:{port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
     except OSError:
         return None
-    return binary
-
-
-def _public_url_is_live(url: str, timeout: float = 20.0) -> bool:
-    """Return True once the public URL actually serves the app.
-
-    Cloudflare prints the hostname before the tunnel is connected, and a dead
-    quick tunnel answers with HTTP 530 ("error 1033"), so checking the URL is
-    the only reliable way to know it is usable.
-    """
-    import urllib.request
-
-    deadline = _time.monotonic() + timeout
-    while _time.monotonic() < deadline:
-        try:
-            request = urllib.request.Request(
-                url, headers={"User-Agent": "FlashStudio"})
-            with urllib.request.urlopen(request, timeout=5) as response:
-                if response.status == 200:
-                    return True
-        except Exception:
-            pass
-        _time.sleep(1.0)
-    return False
-
-
-def _start_cloudflared_tunnel(port: int) -> str | None:
-    """Start a free Cloudflare quick tunnel (no sign-up required).
-
-    The tunnel process is kept alive for the rest of the session so the URL
-    stays usable. Returns the public https URL or None on failure.
-    """
-    binary = _cloudflared_binary()
-    if not binary:
-        return None
-
-    fd, log_name = tempfile.mkstemp(prefix="flashstudio-cloudflared-",
-                                    suffix=".log")
-    os.close(fd)
-    log_path = Path(log_name)
-    try:
-        with open(log_path, "wb") as log_file:
-            proc = subprocess.Popen(
-                [binary, "tunnel", "--no-autoupdate",
-                 "--protocol", "http2", "--edge-ip-version", "4",
-                 "--url", f"http://127.0.0.1:{port}"],
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-            )
-    except OSError:
-        log_path.unlink(missing_ok=True)
-        return None
-
-    _LIVE_TUNNELS.append(proc)
 
     url_re = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
-    deadline = _time.monotonic() + 30
-    while _time.monotonic() < deadline:
-        if proc.poll() is not None:
-            break
-        try:
-            output = log_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            output = ""
-        match = url_re.search(output)
-        if match:
-            url = match.group(0)
-            if _public_url_is_live(url):
-                return url
-            break
-        _time.sleep(0.5)
+    deadline = _time.monotonic() + 20
+    try:
+        import select
+        while _time.monotonic() < deadline:
+            ready, _, _ = select.select([tunnel_proc.stderr], [], [], 0.5)
+            if not ready:
+                if tunnel_proc.poll() is not None:
+                    return None
+                continue
+            line = tunnel_proc.stderr.readline().decode("utf-8", errors="replace")
+            if not line:
+                if tunnel_proc.poll() is not None:
+                    return None
+                continue
+            match = url_re.search(line)
+            if match:
+                return match.group(0)
+    finally:
+        if tunnel_proc.poll() is None:
+            try:
+                tunnel_proc.terminate()
+            except OSError:
+                pass
 
-    # Timed out, exited, or the URL never became reachable — clean up.
-    if proc.poll() is None:
-        try:
-            proc.terminate()
-            proc.wait(timeout=5)
-        except Exception:
-            proc.kill()
-    if proc in _LIVE_TUNNELS:
-        _LIVE_TUNNELS.remove(proc)
-    try:
-        log_tail = log_path.read_text(
-            encoding="utf-8", errors="replace").strip().splitlines()[-4:]
-    except OSError:
-        log_tail = []
-    if log_tail:
-        print("\n  cloudflared log:")
-        for line in log_tail:
-            print(f"    {line}")
-    try:
-        log_path.unlink(missing_ok=True)
-    except OSError:
-        pass
     return None
 
 
@@ -260,11 +165,6 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
     """Launch in Google Colab with a public URL that works on any device."""
     import urllib.request
 
-    try:
-        from flashstudio import __version__
-        print(f"  FlashStudio v{__version__}")
-    except Exception:
-        pass
     print("  Starting FlashStudio...", end="", flush=True)
 
     proc = subprocess.Popen(
@@ -323,7 +223,7 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
                     print(" Done!")
 
         if not public_url:
-            print(" Unavailable (falling back to Colab proxy)")
+            print(" Skipped (using Colab proxy)")
 
     # 3) Colab's built-in proxy (fallback — desktop browser only)
     colab_proxy_url = _get_colab_proxy_url(port)
@@ -337,8 +237,6 @@ def _launch_colab(app_path: str, port: int, share: bool, ngrok_token: str | None
         print(f"  Open: {public_url}")
         if tunnel_type:
             print("  (works on mobile & any device)")
-            if colab_proxy_url:
-                print(f"  Direct link (this browser): {colab_proxy_url}")
         else:
             print("  ⚠ This URL only works in this browser.")
             print("    On mobile? Re-run with: launch(share=True)")
