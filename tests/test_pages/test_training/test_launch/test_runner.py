@@ -155,6 +155,28 @@ def test_start_training_normalizes_nested_images_layout(
     assert os.path.isfile(str(data_root / "valid" / "_annotations.coco.json"))
 
 
+def test_start_training_rejects_validation_folder_as_train(
+    tmp_path, mock_session_state, monkeypatch
+):
+    root = tmp_path / "dataset"
+    _write_split(root, "valid")
+    mock_session_state["train_img_path"] = str(root / "valid" / "images")
+    mock_session_state["val_img_path"] = str(root / "valid" / "images")
+    mock_session_state["dataset_name"] = "Test"
+
+    called = []
+    monkeypatch.setattr(
+        "flashstudio.pages.training.launch.runner._run_flashdet_training",
+        lambda: called.append(True),
+    )
+
+    _start_training()
+
+    assert called == []
+    assert mock_session_state["training_status"] == "Invalid dataset layout"
+    assert "validation/test split" in mock_session_state["training_error"]
+
+
 def test_generate_run_name_returns_non_empty(mock_session_state):
     name = _generate_run_name()
     assert isinstance(name, str)

@@ -389,6 +389,14 @@ class TestFindRootSplitSafety:
         (images / "a.jpg").write_bytes(b"x")
         assert data_helpers._find_root(str(root)) == str(root)
 
+    def test_internal_temp_folder_is_not_descended(self, tmp_path):
+        root = tmp_path / "upload"
+        images = root / "_yolo_1yi7iw6y" / "valid" / "images"
+        images.mkdir(parents=True)
+        (images / "a.jpg").write_bytes(b"x")
+        (images / "_annotations.coco.json").write_text("{}")
+        assert data_helpers._find_root(str(root)) == str(root)
+
 
 class TestFindRootEdgeCases:
     def test_empty_dir_returns_base(self, tmp_path):

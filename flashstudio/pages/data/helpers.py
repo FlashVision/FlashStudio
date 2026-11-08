@@ -282,6 +282,11 @@ def _is_split_like(name: str) -> bool:
     } or name.startswith(("train", "val", "test", "images", "labels"))
 
 
+def _is_internal_name(name: str) -> bool:
+    """True for FlashStudio temporary/internal folders (``_yolo_*``, ``.downloads``)."""
+    return name.startswith(("_", "."))
+
+
 def _find_root(base, _depth=0):
     """Descend through single wrapper folders to the real dataset root.
 
@@ -300,6 +305,7 @@ def _find_root(base, _depth=0):
             os.path.isdir(child)
             and _depth < 6
             and not _is_split_like(os.path.basename(child))
+            and not _is_internal_name(os.path.basename(child))
         ):
             return _find_root(child, _depth + 1)
 
@@ -307,7 +313,7 @@ def _find_root(base, _depth=0):
     # plus VOCdevkit/VOC2012).  Pick the first real dataset child, but never
     # mistake a train/val/images split for the dataset root.
     for entry in entries:
-        if _is_split_like(entry):
+        if _is_split_like(entry) or _is_internal_name(entry):
             continue
         full = os.path.join(base, entry)
         if (
@@ -524,9 +530,10 @@ def _convert_yolo_layout(root, out, class_names=None, val_pct=20):
     if not pairs:
         return None
 
-    work_root = tempfile.mkdtemp(
-        prefix="_yolo_", dir=os.path.dirname(os.path.abspath(root)) or None
-    )
+    # Keep the staging folder outside the dataset tree.  If cleanup fails (for
+    # example a locked file on Windows) a folder left inside the dataset looks
+    # like a valid COCO dataset and can later be auto-selected as the root.
+    work_root = tempfile.mkdtemp(prefix="_yolo_")
     try:
         has_valid = any(split == "valid" for split, _i, _l in pairs)
         train_pair = next(

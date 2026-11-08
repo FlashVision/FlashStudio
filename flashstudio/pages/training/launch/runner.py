@@ -84,6 +84,22 @@ def _start_training():
         )
         return
 
+    # A validation folder used as the training split would make FlashDet look
+    # for ``<...>/valid/train/_annotations.coco.json``.  Fail with a clear
+    # message instead of the confusing derived path.
+    from flashstudio.utils.dataset_paths import split_dir as _split_dir
+
+    train_split = _split_dir(train_images)
+    if os.path.basename(train_split).lower().startswith(("val", "test")):
+        st.session_state["training_active"] = False
+        st.session_state["training_status"] = "Invalid dataset layout"
+        st.session_state["training_error"] = (
+            f"Train images point at a validation/test split: `{train_images}`. "
+            "Load the dataset again (or set Train → Images to the training "
+            "folder) so the train and validation splits come from the same dataset."
+        )
+        return
+
     # Auto-find val path if missing but train exists.  This must handle both
     # dataset/train + dataset/valid and dataset/train/images +
     # dataset/valid/images layouts.
