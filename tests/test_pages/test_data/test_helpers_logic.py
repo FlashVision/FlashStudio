@@ -352,7 +352,7 @@ class TestDatasetLoadingFlow:
         self, tmp_path, mock_session_state, monkeypatch
     ):
         root = tmp_path / "dataset"
-        train_images = self._make_split(root, "train", "cat")
+        self._make_split(root, "train", "cat")
         mock_session_state["val_img_path"] = "/old/validation"
         monkeypatch.setattr(data_helpers.st, "rerun", lambda: None)
 
@@ -360,8 +360,11 @@ class TestDatasetLoadingFlow:
             str(root), {"name": "Test", "classes": 1}
         )
 
-        assert mock_session_state["train_img_path"] == str(train_images)
-        assert "val_img_path" not in mock_session_state
+        # The stale path is replaced and a real validation split is created.
+        val_path = mock_session_state.get("val_img_path", "")
+        assert val_path and val_path != "/old/validation"
+        assert os.path.isdir(val_path)
+        assert os.path.isdir(mock_session_state["train_img_path"])
 
 
 class TestFindRootSplitSafety:

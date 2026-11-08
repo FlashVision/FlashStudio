@@ -30,12 +30,17 @@ def _slug(text):
 
 
 def _output_root(dataset_name, pct):
-    out = os.path.join(
+    return os.path.join(
         _get_data_root(), "uploaded",
         f"subset_{_slug(dataset_name)}_{int(pct)}pct",
     )
-    shutil.rmtree(out, ignore_errors=True)
-    return out
+
+
+def _commit_output(tmp_out, out):
+    """Replace *out* with a fully written temp folder."""
+    if os.path.isdir(out):
+        shutil.rmtree(out, ignore_errors=True)
+    os.replace(tmp_out, out)
 
 
 def _unique(name, used):
@@ -174,6 +179,55 @@ def _render_split():
         st.info("No images found in the loaded dataset.")
         return
 
+    if train_imgs and not val_imgs:
+        st.markdown("#### No validation split")
+        st.caption(
+            "This dataset has only training images. Create a validation split "
+            "automatically — the percentage is yours to choose."
+        )
+        auto_pct = st.slider(
+            "Validation share", 5, 50,
+            int(st.session_state.get("auto_val_pct", 20) or 20), 5,
+            key="auto_val_pct",
+        )
+        auto_seed = st.number_input(
+            "Random seed", 0, 9999,
+            int(st.session_state.get("auto_val_seed", 42) or 42),
+            key="auto_val_seed",
+        )
+        if st.button(
+            f"Create {100 - auto_pct}/{auto_pct} validation split",
+            type="primary", key="create_val_split_btn",
+            use_container_width=True,
+        ):
+            from flashstudio.utils.dataset_paths import resolve_annotation_file
+            from flashstudio.pages.data.fix.annotations import _yolo_label_dir
+            from flashstudio.utils.dataset_split import auto_validation_split
+
+            ann = resolve_annotation_file(
+                train_path, split="train",
+                hint=st.session_state.get("train_ann_path", ""),
+            )
+            lbl = _yolo_label_dir(
+                train_path, st.session_state.get("train_label_path", ""),
+            )
+            state = auto_validation_split(
+                train_path, ann_file=ann, label_dir=lbl,
+                val_ratio=auto_pct, seed=auto_seed,
+            )
+            if state:
+                _clear_derived_state()
+                st.session_state.update(state)
+                from flashstudio.utils import flash
+                flash(
+                    f"Created a {100 - auto_pct}/{auto_pct} validation split",
+                    "success",
+                )
+                st.rerun()
+            else:
+                st.error("Could not find annotations to split.")
+        return
+
     st.caption(
         f"Current · **{len(train_imgs):,}** train · **{len(val_imgs):,}** validation"
     )
@@ -269,12 +323,22 @@ def _subset_coco(train_path, val_path, train_ann, val_ann, out,
     val_entries = _sample(val_entries, pct, rng)
     category_ids = {name: i + 1 for i, name in enumerate(categories)}
 
-    tr_imgs, tr_json = _write_coco_split(
-        os.path.join(out, "train"), train_entries, category_ids,
+    # Write next to the destination, then swap it in. This is safe even when
+    # the current dataset already lives inside *out* (re-applying a subset).
+    tmp_out = out.rstrip("/\\") + ".tmp"
+    shutil.rmtree(tmp_out, ignore_errors=True)
+    _write_coco_split(
+        os.path.join(tmp_out, "train"), train_entries, category_ids,
     )
-    va_imgs, va_json = _write_coco_split(
-        os.path.join(out, "val"), val_entries, category_ids,
+    _write_coco_split(
+        os.path.join(tmp_out, "val"), val_entries, category_ids,
     )
+    _commit_output(tmp_out, out)
+
+    tr_imgs = os.path.join(out, "train", "images")
+    va_imgs = os.path.join(out, "val", "images")
+    tr_json = os.path.join(tr_imgs, "_annotations.coco.json")
+    va_json = os.path.join(va_imgs, "_annotations.coco.json")
 
     st.session_state.update({
         "train_img_path": tr_imgs,
@@ -285,11 +349,11 @@ def _subset_coco(train_path, val_path, train_ann, val_ann, out,
         "val_label_path": "",
         "class_names": "\n".join(category_ids),
         "num_classes": len(category_ids),
-        "ann_format": "COCO JSON",
         "detected_format": "coco",
         "dataset_name": f"{dataset_name} ({int(pct)}% subset)",
     })
     _clear_derived_state()
+    st.session_state["_pending_ann_format"] = "COCO JSON"
 
 
 def _subset_yolo(train_path, val_path, out, pct, seed, dataset_name):
@@ -322,9 +386,11 @@ def _subset_yolo(train_path, val_path, out, pct, seed, dataset_name):
         raise ValueError("No images were found in the loaded splits.")
 
     state = {}
+    tmp_out = out.rstrip("/\\") + ".tmp"
+    shutil.rmtree(tmp_out, ignore_errors=True)
     for split, pairs in split_pairs.items():
-        img_out = os.path.join(out, split, "images")
-        lbl_out = os.path.join(out, split, "labels")
+        img_out = os.path.join(tmp_out, split, "images")
+        lbl_out = os.path.join(tmp_out, split, "labels")
         os.makedirs(img_out, exist_ok=True)
         os.makedirs(lbl_out, exist_ok=True)
         for image, label in pairs:
@@ -335,14 +401,15 @@ def _subset_yolo(train_path, val_path, out, pct, seed, dataset_name):
                 _copy_or_link(label, target)
             else:
                 open(target, "w").close()
-        state[f"{split}_img_path"] = img_out
-        state[f"{split}_label_path"] = lbl_out
+        state[f"{split}_img_path"] = os.path.join(out, split, "images")
+        state[f"{split}_label_path"] = os.path.join(out, split, "labels")
         state[f"{split}_ann_path"] = ""
 
+    _commit_output(tmp_out, out)
     state.update({
-        "ann_format": "YOLO",
         "detected_format": "txt",
         "dataset_name": f"{dataset_name} ({int(pct)}% subset)",
     })
     st.session_state.update(state)
     _clear_derived_state()
+    st.session_state["_pending_ann_format"] = "YOLO"

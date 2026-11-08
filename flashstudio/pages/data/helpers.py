@@ -191,6 +191,21 @@ def _extract_upload(uploaded_file, split):
                     if val_labels:
                         st.session_state["val_label_path"] = val_labels
 
+            if split == "train" and not st.session_state.get("val_img_path"):
+                from flashstudio.utils.dataset_split import maybe_auto_split
+                from flashstudio.utils import flash as _flash
+
+                _ann = st.session_state.get("train_ann_path") or ann_hint
+                _lbl = (
+                    st.session_state.get("train_label_path")
+                    or _find_labels(split_base or root)
+                )
+                if maybe_auto_split(img_dir, "", ann_file=_ann, label_dir=_lbl):
+                    _flash(
+                        "No validation set — created an 80/20 split automatically",
+                        "info",
+                    )
+
             train_dir = st.session_state.get("train_img_path", "")
             val_dir = st.session_state.get("val_img_path", "")
             _ensure_dataset_annotations(root, train_dir, val_dir)
@@ -458,7 +473,7 @@ def _build_tiny_2class():
         "dataset_name": "Tiny 2-Class (person, car)",
         "class_names": "person\ncar",
         "num_classes": 2,
-        "ann_format": "COCO JSON",
+        "_pending_ann_format": "COCO JSON",
         "detected_format": "coco",
         "_data_tab_next": "Preview",
     })
@@ -468,7 +483,7 @@ def _build_tiny_2class():
     st.rerun()
 
 
-def _split_yolo_train_pair(images_dir, labels_dir, work_root):
+def _split_yolo_train_pair(images_dir, labels_dir, work_root, val_pct=20):
     """Create train/valid folders from a single YOLO train pair."""
     import shutil
 
@@ -479,7 +494,9 @@ def _split_yolo_train_pair(images_dir, labels_dir, work_root):
     if not image_names:
         return False
 
-    split_at = max(1, int(len(image_names) * 0.8))
+    val_pct = max(5, min(50, int(val_pct or 20)))
+    split_at = int(len(image_names) * (100 - val_pct) / 100.0)
+    split_at = min(max(1, split_at), max(1, len(image_names) - 1))
     train_names, valid_names = image_names[:split_at], image_names[split_at:]
     if not valid_names:
         valid_names = train_names[-1:]
@@ -498,7 +515,7 @@ def _split_yolo_train_pair(images_dir, labels_dir, work_root):
     return True
 
 
-def _convert_yolo_layout(root, out, class_names=None):
+def _convert_yolo_layout(root, out, class_names=None, val_pct=20):
     """Convert a non-standard YOLO layout through a canonical temp folder."""
     import shutil
     import tempfile
@@ -517,7 +534,8 @@ def _convert_yolo_layout(root, out, class_names=None):
             pairs[0] if pairs else None,
         )
         if not has_valid and train_pair:
-            if not _split_yolo_train_pair(train_pair[1], train_pair[2], work_root):
+            if not _split_yolo_train_pair(train_pair[1], train_pair[2], work_root,
+                                          val_pct=val_pct):
                 return None
         else:
             for split, images_dir, labels_dir in pairs:
@@ -580,6 +598,7 @@ def _convert_to_coco(src, split, src_fmt):
         raw = "\n".join(raw)
     if raw.strip():
         cls_names = [c.strip() for c in raw.strip().replace(",", "\n").split("\n") if c.strip()]
+    val_pct = int(st.session_state.get("auto_val_pct", 20) or 20)
     with st.spinner("Converting to COCO..."):
         try:
             if src_fmt in ("kitti", "labelme", "csv", "supervisely"):
@@ -587,7 +606,9 @@ def _convert_to_coco(src, split, src_fmt):
                     convert_extra_to_coco,
                 )
 
-                stats = convert_extra_to_coco(src, out, val_ratio=0.2)
+                stats = convert_extra_to_coco(
+                    src, out, val_ratio=val_pct / 100.0,
+                )
                 if not stats:
                     raise RuntimeError(
                         f"{src_fmt} → COCO conversion produced no images"
@@ -597,6 +618,7 @@ def _convert_to_coco(src, split, src_fmt):
                     stats = convert_dataset(
                         source_dir=src, output_dir=out,
                         target_format="coco", class_names=cls_names,
+                        val_ratio=val_pct / 100.0,
                     )
                 except Exception:
                     if src_fmt != "txt":
@@ -605,7 +627,9 @@ def _convert_to_coco(src, split, src_fmt):
                     # Normalize other layouts (images/train2017, flat images, ...)
                     # through a canonical temporary folder.
                     shutil.rmtree(out, ignore_errors=True)
-                    stats = _convert_yolo_layout(src, out, cls_names)
+                    stats = _convert_yolo_layout(
+                        src, out, cls_names, val_pct=val_pct,
+                    )
                     if stats is None:
                         raise
             if stats.get("status") == "already_in_target_format":
@@ -822,8 +846,23 @@ def _ensure_dataset_annotations(root, train_dir="", val_dir=""):
 
 def _use_existing(path, ds_info):
     from flashstudio.utils import flash
-    st.session_state["dataset_output_path"] = path
+    from flashstudio.utils.dataset_paths import resolve_annotation_file
+
     name = ds_info.get("name", os.path.basename(path))
+
+    # A downloaded folder may still be VOC/KITTI/LabelMe/CSV/YOLO. Route it
+    # through the finalizer instead of loading bare images with no boxes.
+    train_dir = os.path.join(path, "train")
+    train_images = _image_dir(train_dir) if os.path.isdir(train_dir) else ""
+    ready = bool(
+        train_images
+        and resolve_annotation_file(train_images, split="train", root=path)
+    )
+    if not ready and _finalize_downloaded_dataset(path, name):
+        st.session_state["_data_tab_next"] = "Preview"
+        st.rerun()
+
+    st.session_state["dataset_output_path"] = path
     st.session_state["dataset_name"] = name
     st.session_state["dataset_classes"] = ds_info.get("classes", ds_info.get("cls", INFER_NUM_CLASSES))
     if ds_info.get("id"):
@@ -844,6 +883,41 @@ def _use_existing(path, ds_info):
         )
         if found_val:
             st.session_state["val_img_path"] = _image_dir(found_val)
+
+    # A validation folder with images but no annotations is not usable.
+    val_img = st.session_state.get("val_img_path", "")
+    if val_img:
+        from flashstudio.utils.dataset_paths import resolve_annotation_file
+        from flashstudio.pages.data.fix.annotations import _yolo_label_dir
+
+        val_ann = resolve_annotation_file(val_img, split="val", root=path)
+        val_lbl = _yolo_label_dir(
+            val_img, st.session_state.get("val_label_path", ""),
+        )
+        has_lbl = bool(
+            val_lbl and any(f.endswith(".txt") for f in os.listdir(val_lbl))
+        )
+        if not val_ann and not has_lbl:
+            st.session_state.pop("val_img_path", None)
+
+    if not st.session_state.get("val_img_path") and st.session_state.get("train_img_path"):
+        from flashstudio.utils.dataset_paths import resolve_annotation_file
+        from flashstudio.pages.data.fix.annotations import _yolo_label_dir
+        from flashstudio.utils.dataset_split import maybe_auto_split
+
+        tr = st.session_state["train_img_path"]
+        ann = resolve_annotation_file(
+            tr, split="train",
+            hint=st.session_state.get("train_ann_path", ""),
+        )
+        lbl = _yolo_label_dir(
+            tr, st.session_state.get("train_label_path", ""),
+        )
+        if maybe_auto_split(tr, "", ann_file=ann, label_dir=lbl):
+            flash(
+                "No validation set found — created an 80/20 split automatically",
+                "info",
+            )
 
     _ensure_dataset_annotations(path)
     if st.session_state.get("train_ann_path"):
@@ -1559,7 +1633,7 @@ def _find_kitti_dirs(root):
     return None, None
 
 
-def _convert_kitti_layout(root, out):
+def _convert_kitti_layout(root, out, val_pct=20):
     """Convert a KITTI object-detection folder to COCO train/valid splits."""
     import json
     import random
@@ -1616,7 +1690,9 @@ def _convert_kitti_layout(root, out):
     cat_ids = {name: i + 1 for i, name in enumerate(class_names)}
     rng = random.Random(0)
     rng.shuffle(entries)
-    split_at = max(1, int(len(entries) * 0.8))
+    val_pct = max(5, min(50, int(val_pct or 20)))
+    split_at = int(len(entries) * (100 - val_pct) / 100.0)
+    split_at = min(max(1, split_at), max(1, len(entries) - 1))
     splits = {"train": entries[:split_at], "valid": entries[split_at:]}
     if not splits["valid"]:
         splits["valid"] = splits["train"][-1:]
@@ -1674,7 +1750,12 @@ def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
     from flashstudio.utils import flash
 
     _clear_loaded_paths()
-    images_dir = _find_images(_find_split_base(root, "train") or root)
+    val_pct = int(st.session_state.get("auto_val_pct", 20) or 20)
+    root = _find_root(root) or root
+    split_base = _find_split_base(root, "train")
+    images_dir = _find_images(split_base) if split_base else None
+    if not images_dir:
+        images_dir = _find_images(root)
     from flashstudio.pages.data.fix.annotations import _yolo_label_dir
 
     labels_dir = _yolo_label_dir(images_dir) if images_dir else ""
@@ -1742,18 +1823,31 @@ def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
             if val_images:
                 flash(f"Dataset `{name}` loaded", "success")
             else:
-                flash(
-                    f"Dataset `{name}` loaded without a validation split; "
-                    "add one before training.",
-                    "warning",
+                from flashstudio.utils.dataset_split import maybe_auto_split
+
+                ann = resolve_annotation_file(
+                    images_dir, split="train", root=root,
                 )
+                if maybe_auto_split(images_dir, "", ann_file=ann):
+                    pct = int(st.session_state.get("auto_val_pct", 20) or 20)
+                    flash(
+                        f"Dataset `{name}` has no validation split — "
+                        f"auto-created a {100 - pct}/{pct} split.",
+                        "success",
+                    )
+                else:
+                    flash(
+                        f"Dataset `{name}` loaded without a validation split; "
+                        "add one before training.",
+                        "warning",
+                    )
             return images_dir
 
     # KITTI object-detection layout (training/image_2 + training/label_2).
     kitti_out = os.path.join(
         os.path.dirname(root), os.path.basename(root) + "_coco"
     )
-    kitti_stats = _convert_kitti_layout(root, kitti_out)
+    kitti_stats = _convert_kitti_layout(root, kitti_out, val_pct=val_pct)
     if kitti_stats:
         train_path = os.path.join(kitti_out, "train")
         valid_path = os.path.join(kitti_out, "valid")
@@ -1786,7 +1880,9 @@ def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
         extra_out = os.path.join(
             os.path.dirname(root), os.path.basename(root) + "_coco"
         )
-        extra_stats = convert_extra_to_coco(root, extra_out, val_ratio=0.2)
+        extra_stats = convert_extra_to_coco(
+            root, extra_out, val_ratio=val_pct / 100.0,
+        )
         if extra_stats:
             train_path = _image_dir(os.path.join(extra_out, "train"))
             valid_path = _image_dir(os.path.join(extra_out, "valid"))
@@ -1807,6 +1903,47 @@ def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
             )
             return train_path
 
+    # Pascal VOC layouts (images/ + annotations/*.xml).
+    if _HAS_FLASHDET:
+        try:
+            src_fmt = detect_dataset_format(root)
+        except Exception:
+            src_fmt = ""
+        if src_fmt == "voc":
+            import shutil
+
+            coco_out = os.path.join(
+                os.path.dirname(root), os.path.basename(root) + "_coco"
+            )
+            shutil.rmtree(coco_out, ignore_errors=True)
+            try:
+                stats = convert_dataset(
+                    source_dir=root, output_dir=coco_out,
+                    target_format="coco", val_ratio=val_pct / 100.0,
+                )
+            except Exception as exc:
+                flash(f"VOC→COCO conversion failed: {exc}", "error")
+                stats = None
+            if stats:
+                train_path = _image_dir(os.path.join(coco_out, "train"))
+                valid_path = _image_dir(os.path.join(coco_out, "valid"))
+                st.session_state["dataset_output_path"] = coco_out
+                st.session_state["dataset_name"] = name
+                st.session_state["train_img_path"] = train_path
+                st.session_state["val_img_path"] = valid_path
+                _ensure_dataset_annotations(coco_out)
+                st.session_state["detected_format"] = "coco"
+                st.session_state["_pending_ann_format"] = "COCO JSON"
+                detected = _auto_detect_classes()
+                if detected:
+                    st.session_state["class_names"] = "\n".join(detected)
+                    st.session_state["num_classes"] = len(detected)
+                flash(
+                    f"Dataset `{name}` converted from VOC to COCO",
+                    "success",
+                )
+                return train_path
+
     # YOLO-style archive: normalize into train/valid (preserving an existing
     # validation split), then convert to COCO.
     if labels_dir and _HAS_FLASHDET:
@@ -1817,7 +1954,9 @@ def _finalize_downloaded_dataset(root: str, name: str) -> str | None:
         shutil.rmtree(coco_out, ignore_errors=True)
         stats = None
         try:
-            stats = _convert_yolo_layout(root, coco_out, class_names=names)
+            stats = _convert_yolo_layout(
+                root, coco_out, class_names=names, val_pct=val_pct,
+            )
         except Exception as exc:
             flash(f"YOLO→COCO conversion failed: {exc}", "error")
 

@@ -100,9 +100,11 @@ def _render_preview():
         st.session_state["prev_jump"] = start + 1
         st.session_state["_prev_jump_shown"] = start + 1
     with head[7]:
+        if "prev_jump" not in st.session_state:
+            st.session_state["prev_jump"] = start + 1
         jump = st.number_input(
             "Image #", min_value=1, max_value=len(all_imgs),
-            value=start + 1, key="prev_jump",
+            key="prev_jump",
             label_visibility="collapsed", help="Jump to an image number",
         )
     if jump is not None and int(jump) != start + 1:

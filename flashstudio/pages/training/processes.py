@@ -48,12 +48,17 @@ def _ppid(pid):
         return None
 
 
-def _cmdline(pid):
+def _cmdline_args(pid):
     try:
         with open(f"/proc/{pid}/cmdline", "rb") as fh:
-            return fh.read().replace(b"\x00", b" ").decode("utf-8", "replace")
+            data = fh.read()
     except OSError:
-        return ""
+        return []
+    return [
+        part.decode("utf-8", "replace")
+        for part in data.split(b"\x00")
+        if part
+    ]
 
 
 def read_pid_file(run_dir):
@@ -123,11 +128,14 @@ def running_trainer_manifests():
         if not name.isdigit():
             continue
         candidate = int(name)
-        cmdline = _cmdline(candidate)
-        if "trainer_launcher" not in cmdline or not pid_is_alive(candidate):
+        args = _cmdline_args(candidate)
+        if (
+            not any("trainer_launcher" in arg for arg in args)
+            or not pid_is_alive(candidate)
+        ):
             continue
         manifest = next(
-            (part for part in cmdline.split() if part.endswith(MANIFEST_FILE)),
+            (arg for arg in args if arg.endswith(MANIFEST_FILE)),
             "",
         )
         if manifest:

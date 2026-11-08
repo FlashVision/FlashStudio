@@ -184,8 +184,15 @@ def _render_start_tab(empty_hint=None):
     if runs_root:
         os.makedirs(runs_root, exist_ok=True)
 
-    if "run_name" not in st.session_state or not st.session_state.get("run_name", "").strip():
-        st.session_state["run_name"] = _generate_run_name()
+    if "run_name" not in st.session_state:
+        # Streamlit can drop a widget key when its widget is not rendered for
+        # one run (the Start button queues a run that exits before the Launch
+        # tab is painted). Restore the created run name instead of generating
+        # a new one, which used to reset run_created and hide Stop/Pause.
+        st.session_state["run_name"] = (
+            st.session_state.get("_run_name_at_create")
+            or _generate_run_name()
+        )
 
     prev_name = st.session_state.get("_run_name_at_create", "")
     current_name = st.session_state.get("run_name", "")
@@ -205,7 +212,6 @@ def _render_start_tab(empty_hint=None):
         with name_col:
             st.text_input(
                 "Run name",
-                value=str(st.session_state.get("run_name", "")),
                 key="run_name",
                 label_visibility="collapsed",
                 placeholder="e.g. traffic-night-v2",
