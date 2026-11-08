@@ -46,6 +46,14 @@ def _start_training():
     train_images = st.session_state.get("train_img_path", "")
     val_images = st.session_state.get("val_img_path", "")
 
+    # Recover from a stale saved selection (temporary _yolo_* folder or a
+    # validation split used as train) before validating the paths.
+    from flashstudio.utils.dataset_state import repair_dataset_paths
+
+    if repair_dataset_paths(save=True).get("repaired"):
+        train_images = st.session_state.get("train_img_path", "")
+        val_images = st.session_state.get("val_img_path", "")
+
     # Validate dataset paths exist
     if not train_images or not os.path.isdir(train_images):
         dataset_name = st.session_state.get("dataset_name", "")

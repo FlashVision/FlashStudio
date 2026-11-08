@@ -204,6 +204,18 @@ def main():
     if active_project:
         _ensure_config_in_session(active_project["id"])
 
+    # Older versions could persist a train path inside a temporary conversion
+    # folder (``_yolo_*``) or a validation split.  The path is saved with the
+    # project, so upgrading the package alone does not fix it.  Rebuild a
+    # consistent train/val pair from the project's datasets when needed.
+    try:
+        from flashstudio.utils.dataset_state import repair_dataset_paths
+
+        if repair_dataset_paths(save=True).get("repaired"):
+            _init_config_mirror()
+    except Exception:
+        pass
+
     # Keep the sidebar/dashboard status current even when the user is not on
     # the Training page when a background run finishes or fails.
     try:

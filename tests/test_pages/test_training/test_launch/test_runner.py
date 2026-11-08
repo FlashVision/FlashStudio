@@ -177,6 +177,48 @@ def test_start_training_rejects_validation_folder_as_train(
     assert "validation/test split" in mock_session_state["training_error"]
 
 
+def test_start_training_repairs_stale_internal_train_path(
+    tmp_path, mock_session_state, monkeypatch
+):
+    root = tmp_path / "raccoon"
+
+    def _flat_split(split):
+        folder = root / split
+        folder.mkdir(parents=True)
+        (folder / "image.jpg").write_bytes(b"x")
+        (folder / "_annotations.coco.json").write_text(
+            '{"images":[{"id":1,"file_name":"image.jpg","width":10,"height":10}],'
+            '"annotations":[{"id":1,"image_id":1,"category_id":1,'
+            '"bbox":[1,1,2,2]}],'
+            '"categories":[{"id":1,"name":"raccoon","supercategory":"object"}]}'
+        )
+        return folder
+
+    train = _flat_split("train")
+    val = _flat_split("valid")
+    stale = tmp_path / "_yolo_abc" / "valid" / "images"
+    stale.mkdir(parents=True)
+
+    mock_session_state["train_img_path"] = str(stale)
+    mock_session_state["val_img_path"] = str(val)
+    mock_session_state["dataset_output_path"] = str(root)
+    mock_session_state["dataset_name"] = "Raccoon"
+    mock_session_state["class_names"] = "raccoon"
+    mock_session_state["num_classes"] = 1
+
+    called = []
+    monkeypatch.setattr(
+        "flashstudio.pages.training.launch.runner._run_flashdet_training",
+        lambda: called.append(True),
+    )
+
+    _start_training()
+
+    assert called == [True]
+    assert mock_session_state["train_img_path"] == str(train)
+    assert mock_session_state["val_img_path"] == str(val)
+
+
 def test_generate_run_name_returns_non_empty(mock_session_state):
     name = _generate_run_name()
     assert isinstance(name, str)

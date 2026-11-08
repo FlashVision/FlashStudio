@@ -13,6 +13,15 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_project_index(tmp_path, monkeypatch):
+    """Keep tests from writing to the user's real ~/.flashstudio/projects.json."""
+    import flashstudio.components.project_manager as pm
+
+    monkeypatch.setattr(pm, "PROJECTS_ROOT", str(tmp_path / "projects"))
+    monkeypatch.setattr(pm, "PROJECTS_INDEX", str(tmp_path / "projects.json"))
+
+
 @pytest.fixture()
 def tmp_dir():
     """Provide a temporary directory, cleaned up after the test."""
