@@ -1,15 +1,14 @@
 """Weight discovery and download helpers (FlashDet registry + Ultralytics zoo).
 
-All downloads are cached under ``~/.flashstudio/weights`` so inference,
-training, and export share the same checkpoints.
+All downloads are cached in the shared weights folder configured in
+``~/.flashstudio/storage.json`` (default ``~/.flashstudio/weights``) so
+inference, training, and export share the same checkpoints.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
-
-CACHE_DIR = os.path.join(os.path.expanduser("~"), ".flashstudio", "weights")
 
 YOLO_SERIES = ["YOLOv8", "YOLOv9", "YOLOv10", "YOLOv11"]
 YOLO_SIZES = ["n", "s", "m", "l", "x"]
@@ -25,8 +24,10 @@ YOLO_SIZE_MULT = {
 
 
 def cache_dir() -> str:
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    return CACHE_DIR
+    """Folder for pretrained checkpoints (user-configurable, shared cache)."""
+    from flashstudio.utils.storage import ensure_weights_root
+
+    return ensure_weights_root()
 
 
 def flashdet_weights() -> list[dict]:

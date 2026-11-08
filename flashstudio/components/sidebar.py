@@ -210,6 +210,103 @@ def _render_status():
             st.rerun()
 
 
+def _render_storage(project):
+    """Let the user choose where datasets, runs, and weights are stored."""
+    from flashstudio.utils import storage
+
+    defaults = {
+        "datasets": storage.default_datasets_root(),
+        "runs": storage.default_runs_root(),
+        "weights": storage.DEFAULT_WEIGHTS_DIR,
+    }
+    getters = {
+        "datasets": storage.get_datasets_root,
+        "runs": storage.get_runs_root,
+        "weights": storage.get_weights_root,
+    }
+    resolvers = {
+        "datasets": storage.resolve_datasets_root,
+        "runs": storage.resolve_runs_root,
+        "weights": storage.resolve_weights_root,
+    }
+    setters = {
+        "datasets": storage.set_datasets_root,
+        "runs": storage.set_runs_root,
+        "weights": storage.set_weights_root,
+    }
+    keys = {
+        "datasets": "_storage_datasets_input",
+        "runs": "_storage_runs_input",
+        "weights": "_storage_weights_input",
+    }
+    labels = {
+        "datasets": "Datasets",
+        "runs": "Training runs",
+        "weights": "Pretrained weights",
+    }
+    help_text = {
+        "datasets": "Downloaded and extracted datasets are saved here.",
+        "runs": "Checkpoints, logs, and curves for each training run.",
+        "weights": "Shared weight cache. Used by every project.",
+    }
+
+    with st.expander("📁 Storage locations"):
+        st.caption(
+            "Pick any folder, including another drive. Dataset and run folders "
+            "belong to the active project; weights are shared."
+        )
+        for name in ("datasets", "runs", "weights"):
+            if keys[name] not in st.session_state:
+                st.session_state[keys[name]] = getters[name]()
+            st.text_input(
+                labels[name],
+                key=keys[name],
+                help=f"{help_text[name]} Leave empty to use the default.",
+            )
+
+        if st.button(
+            "Apply", key="sb_storage_apply", use_container_width=True,
+        ):
+            errors = []
+            resolved = {}
+            for name in ("datasets", "runs", "weights"):
+                path = resolvers[name](
+                    str(st.session_state.get(keys[name]) or "")
+                )
+                ok, message = storage.ensure_dir(path)
+                if not ok:
+                    errors.append(f"{labels[name]}: {message}")
+                resolved[name] = path
+            if errors:
+                for message in errors:
+                    st.error(message)
+            else:
+                for name in ("datasets", "runs", "weights"):
+                    setters[name](resolved[name])
+                    st.session_state[keys[name]] = resolved[name]
+                if project:
+                    save_project_state()
+                st.rerun()
+
+        if st.button(
+            "Use defaults", key="sb_storage_reset", use_container_width=True,
+            help="Restore the project folders and the shared weight cache.",
+        ):
+            for name in ("datasets", "runs", "weights"):
+                setters[name](defaults[name])
+                st.session_state[keys[name]] = defaults[name]
+            if project:
+                save_project_state()
+            st.rerun()
+
+        current = {name: getters[name]() for name in keys}
+        st.caption(
+            f"Datasets: `{current['datasets']}`  \n"
+            f"Runs: `{current['runs']}`  \n"
+            f"Weights: `{current['weights']}`"
+        )
+
+
 def render_sidebar():
     with st.sidebar:
         _render_brand()
@@ -219,6 +316,8 @@ def render_sidebar():
         current = int(st.session_state.get("current_step", 0) or 0)
         _render_nav(current)
         _render_progress(current)
+
+        _render_storage(project)
 
         st.divider()
         _render_status()

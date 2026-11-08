@@ -7,12 +7,18 @@ from flashstudio.constants import TRAINING_LOG_GLOB
 
 
 def _get_save_dir():
-    """Single source of truth: Model > Advanced > Save Dir. Used across the whole project."""
+    """Training output folder: Model → Advanced → Save Dir.
+
+    Falls back to the project's ``runs`` folder (or the user's configured
+    storage location) instead of the legacy global workspace.
+    """
+    from flashstudio.constants import DEFAULT_SAVE_DIR
     from flashstudio.utils import get_state
+    from flashstudio.utils.storage import default_runs_root
+
     val = get_state("save_dir")
-    if not val:
-        from flashstudio.utils import DEFAULTS
-        val = DEFAULTS["save_dir"]
+    if not val or val == DEFAULT_SAVE_DIR:
+        return default_runs_root()
     return val
 
 

@@ -130,17 +130,24 @@ def _check_network() -> bool:
         return False
 
 
+def _default_datasets_root() -> str:
+    """Project default dataset folder (``<project data>/datasets``)."""
+    from flashstudio.utils.storage import default_datasets_root
+
+    return default_datasets_root()
+
+
 def _resolve_download_root() -> str:
     """Folder where downloaded datasets are stored.
 
     Defaults to ``<project data>/datasets`` so downloads stay inside the
     project instead of mixing with uploads and job metadata.  The value can be
-    changed from the Download tab; relative paths resolve against the project
-    data root.
+    changed from the Download tab or the sidebar's Storage settings; relative
+    paths resolve against the project data root.
     """
     raw = str(st.session_state.get("download_output_dir") or "").strip()
     if not raw:
-        return os.path.join(_get_data_root(), "datasets")
+        return _default_datasets_root()
     raw = os.path.expanduser(raw)
     if not os.path.isabs(raw):
         raw = os.path.join(_get_data_root(), raw)

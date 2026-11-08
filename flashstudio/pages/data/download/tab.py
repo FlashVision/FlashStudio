@@ -7,7 +7,7 @@ import streamlit as st
 from flashstudio.constants import INFER_NUM_CLASSES
 from flashstudio.pages.data._common import (
     _get_native_datasets, _dataset_already_downloaded, _is_archive_url,
-    _get_data_root, _resolve_download_root,
+    _resolve_download_root,
     EXTERNAL_DATASETS, QUICK_START,
 )
 from flashstudio.pages.data.helpers import (
@@ -18,7 +18,9 @@ from flashstudio.pages.data.helpers import (
 
 def _render_download_location():
     """Let the user choose where downloaded datasets are stored."""
-    default_root = os.path.join(_get_data_root(), "datasets")
+    from flashstudio.utils.storage import default_datasets_root
+
+    default_root = default_datasets_root()
     if "_download_dir_input" not in st.session_state:
         st.session_state["_download_dir_input"] = _resolve_download_root()
 
@@ -42,15 +44,9 @@ def _render_download_location():
             st.rerun()
 
     raw = str(st.session_state.get("_download_dir_input") or "").strip()
-    if raw:
-        expanded = os.path.expanduser(raw)
-        resolved = (
-            expanded if os.path.isabs(expanded)
-            else os.path.join(_get_data_root(), expanded)
-        )
-        resolved = os.path.abspath(resolved)
-    else:
-        resolved = default_root
+    from flashstudio.utils.storage import resolve_datasets_root
+
+    resolved = resolve_datasets_root(raw) if raw else default_root
     st.session_state["download_output_dir"] = resolved
 
     if os.path.exists(resolved) and not os.path.isdir(resolved):
