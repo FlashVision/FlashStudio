@@ -2,6 +2,8 @@
 
 import os
 import json
+import shutil
+import subprocess
 import streamlit as st
 
 from flashstudio.constants import (
@@ -16,6 +18,7 @@ from flashstudio.utils.dataset_paths import (
     ensure_coco_annotation, find_validation_dir, has_images,
     load_coco_classes, resolve_annotation_file,
 )
+from flashstudio.utils.subprocess_env import utf8_subprocess_env
 
 
 def _generate_run_name() -> str:
@@ -28,6 +31,57 @@ def _generate_run_name() -> str:
     ds_code = dataset.split("(")[0].strip().replace(" ", "")[:8].lower() if dataset else "custom"
     timestamp = datetime.now().strftime("%m%d_%H%M")
     return f"{size_code}_{ds_code}_{timestamp}"
+
+
+def _ensure_stub_annotation(target_dir: str, images_dir: str) -> None:
+    """Copy the split annotation into *target_dir* when linking failed.
+
+    FlashDet's verifier only needs ``<data_root>/<split>/_annotations.coco.json``
+    to exist.  The dataloader keeps reading the real image folder, so a small
+    annotation-only folder is enough on Windows systems where creating
+    directory symlinks requires administrator rights.
+    """
+    source = os.path.join(images_dir, "_annotations.coco.json")
+    target = os.path.join(target_dir, "_annotations.coco.json")
+    if not os.path.isfile(source) or os.path.exists(target):
+        return
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        shutil.copy2(source, target)
+    except OSError:
+        pass
+
+
+def _make_dir_alias(images_dir: str, target_dir: str) -> None:
+    """Expose *images_dir* at *target_dir* without requiring admin rights.
+
+    Tries a symlink, then a Windows directory junction, and finally creates an
+    annotation-only folder so FlashDet's layout verification still passes.
+    """
+    if os.path.exists(target_dir) or os.path.islink(target_dir):
+        return
+
+    try:
+        os.symlink(
+            os.path.abspath(images_dir), target_dir, target_is_directory=True
+        )
+        return
+    except OSError:
+        pass
+
+    if os.name == "nt":
+        try:
+            result = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", target_dir, os.path.abspath(images_dir)],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0 and os.path.isdir(target_dir):
+                return
+        except OSError:
+            pass
+
+    _ensure_stub_annotation(target_dir, images_dir)
 
 
 def _start_training():
@@ -290,19 +344,14 @@ def _start_training():
                     train_dir_in_root, split="train",
                     hint=st.session_state.get("train_ann_path", ""),
                 )
+                _ensure_stub_annotation(train_dir_in_root, train_images)
             if (
                 os.path.isfile(os.path.join(train_dir_in_root, "_annotations.coco.json"))
                 and has_images(train_dir_in_root)
             ):
                 train_images = train_dir_in_root
         elif not os.path.exists(train_dir_in_root):
-            try:
-                os.symlink(
-                    os.path.abspath(train_images), train_dir_in_root,
-                    target_is_directory=True,
-                )
-            except OSError:
-                pass
+            _make_dir_alias(train_images, train_dir_in_root)
 
     valid_dir_in_root = os.path.join(data_root, "valid")
     if os.path.abspath(val_images) != os.path.abspath(valid_dir_in_root):
@@ -314,13 +363,7 @@ def _start_training():
                 except OSError:
                     pass
         if not os.path.exists(valid_dir_in_root):
-            try:
-                os.symlink(
-                    os.path.abspath(val_images), valid_dir_in_root,
-                    target_is_directory=True,
-                )
-            except OSError:
-                pass
+            _make_dir_alias(val_images, valid_dir_in_root)
 
         if os.path.isdir(valid_dir_in_root):
             # A real directory can contain a nested images/ folder (mixed
@@ -331,6 +374,7 @@ def _start_training():
                     valid_dir_in_root, split="val",
                     hint=st.session_state.get("val_ann_path", ""),
                 )
+                _ensure_stub_annotation(valid_dir_in_root, val_images)
             if (
                 os.path.isfile(os.path.join(valid_dir_in_root, "_annotations.coco.json"))
                 and has_images(valid_dir_in_root)
@@ -572,12 +616,7 @@ def _run_flashdet_training():
     package_root = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
     )
-    env = os.environ.copy()
-    existing_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = (
-        package_root + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
-    )
-    env["PYTHONUNBUFFERED"] = "1"
+    env = utf8_subprocess_env(package_root)
 
     log_path = os.path.join(save_dir, f"train_{time.strftime('%Y%m%d_%H%M%S')}.log")
     log_file_handle = open(log_path, "w", encoding="utf-8")

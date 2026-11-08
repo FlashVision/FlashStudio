@@ -67,7 +67,12 @@ def test_start_training_replaces_stale_train_symlink(
     train_images = _write_split(root, "train")
     val_images = _write_split(root, "valid")
     data_root = root / "train"
-    os.symlink(str(old_train), str(data_root / "train"))
+    try:
+        os.symlink(str(old_train), str(data_root / "train"))
+    except OSError:
+        import pytest
+
+        pytest.skip("directory symlinks need extra privileges on this system")
 
     mock_session_state["train_img_path"] = str(train_images)
     mock_session_state["val_img_path"] = str(val_images)
@@ -217,6 +222,46 @@ def test_start_training_repairs_stale_internal_train_path(
     assert called == [True]
     assert mock_session_state["train_img_path"] == str(train)
     assert mock_session_state["val_img_path"] == str(val)
+
+
+def test_training_subprocess_forces_utf8_output(
+    tmp_path, mock_session_state, monkeypatch
+):
+    import flashstudio.pages.training.launch.runner as runner
+
+    captured = {}
+
+    class _FakeProc:
+        pid = 424242
+
+        def poll(self):
+            return None
+
+    def _fake_popen(*args, **kwargs):
+        captured.update(kwargs)
+        return _FakeProc()
+
+    monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    monkeypatch.setattr(runner, "_get_save_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        runner, "_build_training_params", lambda save_dir: {"class_names": ["cat"]}
+    )
+    monkeypatch.setattr(runner, "_write_classes_file", lambda save_dir, names: "")
+    monkeypatch.setattr(
+        "flashstudio.pages.training.processes.write_pid_file",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr("streamlit.rerun", lambda: None)
+    monkeypatch.setattr("flashstudio.utils.flash", lambda *a, **k: None)
+
+    runner._run_flashdet_training()
+
+    env = captured["env"]
+    assert env["PYTHONIOENCODING"] == "utf-8"
+    assert env["PYTHONUTF8"] == "1"
+    handle = mock_session_state.pop("_log_file_handle", None)
+    if handle:
+        handle.close()
 
 
 def test_generate_run_name_returns_non_empty(mock_session_state):

@@ -23,6 +23,7 @@ from flashstudio.utils.dataset_paths import (
 from flashstudio.utils.dataset_sources import (
     DATASET_URL_MIRRORS as _DATASET_URL_MIRRORS,
 )
+from flashstudio.utils.subprocess_env import utf8_subprocess_env
 
 try:
     from flashdet import download_dataset
@@ -1211,13 +1212,7 @@ def _start_dataset_download(mode, output_dir, **extra):
     package_root = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..")
     )
-    env = os.environ.copy()
-    existing_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = (
-        package_root
-        + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
-    )
-    env["PYTHONUNBUFFERED"] = "1"
+    env = utf8_subprocess_env(package_root)
 
     try:
         with open(log_path, "w", encoding="utf-8") as log_file:
