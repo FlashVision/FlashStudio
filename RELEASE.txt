@@ -1,0 +1,1 @@
+FlashStudio Windows desktop release. Download FlashStudio.exe from the release assets. No source code is included in this release.
